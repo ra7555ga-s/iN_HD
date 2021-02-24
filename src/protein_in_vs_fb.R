@@ -1,7 +1,6 @@
-setwd('/Volumes/My Passport/hd_in/')
+setwd('/Volumes/My Passport/hd_in/24.02.20/')
 load('RNA_GOanalysis.RData')
 
-# Protein ----
 protein <- fread('/Volumes/My Passport/hd_in/09.19_hd/5_proteomics/20200309_HDProteomics_Log2_SubtractMedianColumn_AverageSample_+20.txt', data.table=F)
 protein <- protein[,c('Gene', colnames(protein)[which(colnames(protein) %in% colnames(rna))])]
 protein$gene_unique <- make.unique(protein$Gene)
@@ -14,7 +13,6 @@ colnames(protein_in)[(ncol(protein_in)-1):ncol(protein_in)] <- c('gene_name', 'g
 protein_in[is.na(protein_in)] <- 0
 protein_fb[is.na(protein_fb)] <- 0
 
-# Protein ----
 colnames(protein)[1] <- 'gene_name'
 protein[is.na(protein)] <- 0
 
@@ -91,7 +89,7 @@ protein_test$colours <- ifelse(protein_test$type == 'Downregulated', 'steelblue'
 # Size of the points for the mean plot
 protein_test$cexs <- ifelse(rownames(protein_test) %in% rownames(protein_signdiff) , 1, 0.5)
 
-# png('/Volumes/My Passport/hd_in/07.20_hd/plots/protein_fb.in_meanplot.png', res = 200, height = 15, width = 15, units = "cm")
+png(paste(getwd(), '/plots/protein_fb.in_meanplot.png', sep=''), res = 200, height = 15, width = 15, units = "cm")
 plot(log2(protein_test$`Mean iN`+0.5), 
      log2(protein_test$`Mean FB`+0.5), 
      col=protein_test$colours, 
@@ -106,6 +104,6 @@ legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_test$type
                                  paste("not significant (",as.numeric(table(protein_test$type)["Not significant"]),")",sep = "")),
        pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
 
-# dev.off()
+dev.off()
 
 save.image('protein_in_vs_fb.RData')

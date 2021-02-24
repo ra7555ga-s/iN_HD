@@ -1,4 +1,4 @@
-setwd('/Volumes/My Passport/hd_in/')
+setwd('/Volumes/My Passport/hd_in/24.02.20/')
 load('fb_protein_hd_vs_ctrl.RData')
 
 # Protein ----
@@ -99,7 +99,7 @@ protein_in_test$colours <- ifelse(protein_in_test$type == 'Downregulated', 'stee
 # Size of the points for the mean plot
 protein_in_test$cexs <- ifelse(protein_in_test$type != "Not significant" , 1, 0.5)
 
-# png('/Volumes/My Passport/hd_in/07.20_hd/plots/protein_in_meanplot.png', width = 15, height = 15, units = "cm", res=200)
+png(paste(getwd(), '/plots/in_protein_hd.ctrl_meanplot.png', sep=''), width = 15, height = 15, units = "cm", res=200)
 plot(log2(protein_in_test$`50% quartile Control`), 
      log2(protein_in_test$`50% quartile HD`), 
      col=protein_in_test$colours, 
@@ -114,21 +114,21 @@ legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_in_test$t
                                  paste("not significant (",as.numeric(table(protein_in_test$type)["Not significant"]),")",sep = "")),
        pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
 
-# dev.off()
+dev.off()
 
 protein_in_test_upreg <- protein_in_test[which(protein_in_test$type == 'Upregulated'),]
 protein_in_test_upreg <- merge(protein[,c('Gene', 'gene_unique')], protein_in_test_upreg, by.y='Gene name', by.x='gene_unique')
-# write.table(protein_in_test_upreg$`Gene`, quote=F, col.names = F, row.names = F, 
-#             file='/Volumes/My Passport/hd_in/07.20_hd/5_proteomics/GO_analysis/upregulated/in_protein_upreg.tab')
+write.table(protein_in_test_upreg$`Gene`, quote=F, col.names = F, row.names = F,
+            file=paste(getwd(), '/5_proteomics/GO_analysis/upregulated/in_protein_hd.ctrl_upreg.tab', sep=''))
 
 protein_in_test_dwnreg <- protein_in_test[which(protein_in_test$type == 'Downregulated'),]
 protein_in_test_dwnreg <- merge(protein[,c('Gene', 'gene_unique')], protein_in_test_dwnreg, by.y='Gene name', by.x='gene_unique')
-# write.table(protein_in_test_dwnreg$`Gene`, quote=F, col.names = F, row.names = F, 
-#             file='/Volumes/My Passport/hd_in/07.20_hd/5_proteomics/GO_analysis/downregulated/in_protein_dwnreg.tab')
+write.table(protein_in_test_dwnreg$`Gene`, quote=F, col.names = F, row.names = F,
+            file=paste(getwd(), '/5_proteomics/GO_analysis/downregulated/in_protein_hd.ctrl_dwnreg.tab', sep=''))
 
 protein_in_test <- merge(protein[,c('Gene', 'gene_unique')], protein_in_test, by.y='Gene name', by.x='gene_unique')
-# write.table(protein_in_test$`Gene`, quote=F, col.names = F, row.names = F, 
-#             file='/Volumes/My Passport/hd_in/07.20_hd/5_proteomics/GO_analysis/in_protein_expressed.tab')
+write.table(protein_in_test$`Gene`, quote=F, col.names = F, row.names = F,
+            file=paste(getwd(), '/5_proteomics/GO_analysis/in_protein_hd.ctrl_expressed.tab', sep=''))
 
 save.image('in_protein_hd_vs_ctrl.RData')
 

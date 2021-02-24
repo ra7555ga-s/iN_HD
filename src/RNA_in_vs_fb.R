@@ -1,4 +1,4 @@
-setwd('/Volumes/My Passport/hd_in/')
+setwd('/Volumes/My Passport/hd_in/24.02.20/')
 
 library(ggplot2)
 library(RColorBrewer)
@@ -111,7 +111,7 @@ rna_norm_test$type <- ifelse(rna_norm_test$Pvalue < 0.05 & rna_norm_test$Log2FC 
 rna_norm_test$colours <- ifelse(rna_norm_test$type == 'Downregulated', 'steelblue', 
                                 ifelse(rna_norm_test$type == 'Upregulated', 'tomato3', 'black'))
 
-# png('/Volumes/My Passport/hd_in/07.20_hd/plots/rna_fb.in_meanplot.png',res=200, width=15, height=15,units = "cm")
+png(paste(getwd(), '/plots/rna_fb.in_meanplot.png', sep=''),res=200, width=15, height=15,units = "cm")
 plot(log2(rna_norm_test$`Mean iN`+0.5), 
      log2(rna_norm_test$`Mean FB`+0.5), 
      col=rna_norm_test$colours, 
@@ -126,22 +126,22 @@ legend("bottomright", legend = c(paste("up (",as.numeric(table(rna_norm_test$typ
                                  paste("not significant (",as.numeric(table(rna_norm_test$type)["Not significant"]),")",sep = "")),
        pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
 
-# dev.off()
+dev.off()
 
 # Significantly different 
 rna_norm_test_sign <- subset(rna_norm_test, rna_norm_test$type != 'Not significant')
 
 # Up and down regulated for PANTHER
 rna_norm_test_upreg <- merge(rna_norm_test[which(rna_norm_test$type == 'Upregulated'),], unique(gene_transcript[,c(2,3)]), by.x='row.names', by.y='gene_id')
-# write.table(rna_norm_test_upreg$gene_name, quote=F, col.names = F, row.names = F,
-#             file='/Volumes/My Passport/hd_in/07.20_hd/3_stdmapping/GO_analysis/upregulated/rna_upreg.tab')
+write.table(rna_norm_test_upreg$gene_name, quote=F, col.names = F, row.names = F,
+            file=paste(getwd(), '/3_stdmapping/GO_analysis/upregulated/rna_upreg_fb.in.tab', sep=''))
 
 rna_norm_test_dwnreg <- merge(rna_norm_test[which(rna_norm_test$type == 'Downregulated'),], unique(gene_transcript[,c(2,3)]), by.x='row.names', by.y='gene_id')
-# write.table(rna_norm_test_dwnreg$gene_name, quote=F, col.names = F, row.names = F,
-#             file='/Volumes/My Passport/hd_in/07.20_hd/3_stdmapping/GO_analysis/downregulated/rna_dwnreg.tab')
+write.table(rna_norm_test_dwnreg$gene_name, quote=F, col.names = F, row.names = F,
+            file=paste(getwd(), '/3_stdmapping/GO_analysis/downregulated/rna_dwnreg_fb.in.tab', sep=''))
 
 rna_norm_test <- merge(rna_norm_test, unique(gene_transcript[,c('gene_id', 'gene_name')]), by.x='Gene id', by.y='gene_id')
-# write.table(rna_norm_test$gene_name, quote=F, col.names = F, row.names = F,
-#             file='/Volumes/My Passport/hd_in/07.20_hd/3_stdmapping/GO_analysis/rna_expressed.tab')
+write.table(rna_norm_test$gene_name, quote=F, col.names = F, row.names = F,
+            file=paste(getwd(), '/3_stdmapping/GO_analysis/rna_expressed.tab', sep=''))
 
 save.image('RNA_in_vs_fb.RData')

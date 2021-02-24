@@ -22,22 +22,21 @@ id_to_name <- function(input_gene_ids, transcript_gene){
 
 GO_json <- function(file_name, prefix, botlog2fc=NULL, toplog2fc=NULL, morethan=NULL, ttl='', pdf_width = NULL, pdf_heigth = NULL){
   json <- fromJSON(file=file_name)
-  json$overrepresentation$group[[1]]$result[[1]]$input_list$number_in_list
-  results <- vector("list",  length(json$overrepresentation$group))
+  results <- vector("list",  length(json$overrepresentation$result))
   for(j in 1:length(results)){
     
-    for(i in 1:length(json$overrepresentation$group[[j]]$result)){
-      if(length(json$overrepresentation$group[[j]]$result[[i]]) > 1){
-        if(!is.null(json$overrepresentation$group[[j]]$result[[i]]$input_list$number_in_list)){
-          if(json$overrepresentation$group[[j]]$result[[i]]$input_list$number_in_list > 0 ){
-            tmp <- data.frame(GO_label= json$overrepresentation$group[[j]]$result[[i]]$term$label,
-                              GO_id = json$overrepresentation$group[[j]]$result[[i]]$term$id,
-                              gene_id=paste(json$overrepresentation$group[[j]]$result[[i]]$input_list$mapped_id_list$mapped_id, collapse=', '),
-                              fold_enrichment=json$overrepresentation$group[[j]]$result[[i]]$input_list$fold_enrichment,
-                              sign=json$overrepresentation$group[[j]]$result[[i]]$input_list$plus_minus,
-                              expected=json$overrepresentation$group[[j]]$result[[i]]$input_list$expected,
-                              fdr=json$overrepresentation$group[[j]]$result[[i]]$input_list$fdr,
-                              pval = json$overrepresentation$group[[j]]$result[[i]]$input_list$pValue)
+    # for(i in 1:length(json$overrepresentation$result[[j]])){
+      if(length(json$overrepresentation$result[[j]]) > 1){
+        if(!is.null(json$overrepresentation$result[[j]]$input_list$number_in_list)){
+          if(json$overrepresentation$result[[j]]$input_list$number_in_list > 0 & json$overrepresentation$result[[j]]$term$label != "UNCLASSIFIED"){
+            tmp <- data.frame(GO_label= json$overrepresentation$result[[j]]$term$label,
+                              GO_id = json$overrepresentation$result[[j]]$term$id,
+                              gene_id=paste(json$overrepresentation$result[[j]]$input_list$mapped_id_list$mapped_id, collapse=', '),
+                              fold_enrichment=json$overrepresentation$result[[j]]$input_list$fold_enrichment,
+                              sign=json$overrepresentation$result[[j]]$input_list$plus_minus,
+                              expected=json$overrepresentation$result[[j]]$input_list$expected,
+                              fdr=json$overrepresentation$result[[j]]$input_list$fdr,
+                              pval = json$overrepresentation$result[[j]]$input_list$pValue)
             
             
             results[[j]] <- rbind(results[[j]], tmp)
@@ -46,7 +45,6 @@ GO_json <- function(file_name, prefix, botlog2fc=NULL, toplog2fc=NULL, morethan=
       }
     }
     
-  }
   
   results <- results[-which(sapply(results, is.null))]
   results <- results[which(sapply(results, nrow) != 0)]
@@ -55,15 +53,6 @@ GO_json <- function(file_name, prefix, botlog2fc=NULL, toplog2fc=NULL, morethan=
   results_df$log2fold_enrichment <- log2(results_df$fold_enrichment+0.5)
   
   results_df$gene_id <- as.character(results_df$gene_id)
-  
-  if(startsWith(results_df$gene_id[1], 'ENS')){
-    transcript_gene <- fread('/Volumes/My Passport/annotation/human/gencode/gencode.v30.annotation.transcr.gene.tab', data.table = FALSE, header=FALSE)
-    colnames(transcript_gene) <- c('transcript_id', 'gene_id', 'gene_name', 'gene_type')
-    
-    transcript_gene$gene_id_panther <- unlist(lapply(str_split(transcript_gene$gene_id, '[.]'), `[[` , 1))
-    
-    results_df$gene_name <- unlist(lapply(results_df$gene_id, id_to_name, transcript_gene=transcript_gene))
-  }
   
   write.xlsx(x=results_df[order(results_df$fdr), ], file=paste(prefix, '.xlsx', sep = ''), col.names = T, row.names = F)
   
@@ -180,11 +169,7 @@ GO_json <- function(file_name, prefix, botlog2fc=NULL, toplog2fc=NULL, morethan=
   return(plot)
 }
 
-GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/upregulated/slim_biological_process/in_rna_hd.ctrl_upreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/upregulated/in_rna_hd.ctrl_upreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth= 10)
-GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/downregulated/slim_biological_process/in_rna_hd.ctrl_dwnreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/downregulated/in_rna_hd.ctrl_dwnreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 15, pdf_heigth= 15)
-
-GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/upregulated/slim_biological_process/fb_rna_hd.ctrl_upreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/upregulated/fb_rna_hd.ctrl_upreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth= 10)
-GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/downregulated/slim_biological_process/fb_rna_hd.ctrl_dwnreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/downregulated/fb_rna_hd.ctrl_dwnreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 15, pdf_heigth= 15)
-
+GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/upregulated/slim_biological_process/rna_fb.in_upreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/upregulated/rna_fb.in_upreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth= 15)
+GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/downregulated/slim_biological_process/rna_fb.in_dwnreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/downregulated/rna_fb.in_dwnreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth = 15)
 
 save.image('RNA_GOanalysis.RData')

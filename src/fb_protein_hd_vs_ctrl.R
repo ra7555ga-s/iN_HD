@@ -1,4 +1,4 @@
-setwd('/Volumes/My Passport/hd_in/')
+setwd('/Volumes/My Passport/hd_in/24.02.20/')
 load('protein_in_vs_fb.RData')
 
 # Protein ----
@@ -18,11 +18,6 @@ protein_fb[is.na(protein_fb)] <- 0
 # For each gene (normalized and filtered by expression) 
 # 1) Shapiro test
 # 2) T test
-# rownames(protein_fb) <- make.unique(protein_fb$gene_name)
-# row <- t(protein_fb[1,])
-# protein_fb$hd_mean <- rowMeans(protein_fb[,startsWith(colnames(protein_fb), 'HD')])
-# protein_fb$ctrl_mean <- rowMeans(protein_fb[,!startsWith(colnames(protein_fb), 'HD')])
-
 protein_fb_test <- apply(protein_fb, 1, FUN=function(row){
   row <- as.data.frame(row)
   colnames(row) <- row['gene_unique',]
@@ -112,7 +107,7 @@ protein_fb_test$cexs <- ifelse(protein_fb_test$Pvalue < 0.05 , 1, 0.5)
 protein_fb_test$`log2 Mean Control` <- log2(protein_fb_test$`50% quartile Control` + 0.5) 
 protein_fb_test$`log2 Mean HD` <- log2(protein_fb_test$`50% quartile HD` + 0.5)
 
-# png('/Volumes/My Passport/hd_in/07.20_hd/plots/protein_fb_meanplot.png', width = 15, height = 15, units = "cm", res=200)
+png(paste(getwd(), '/plots/fb_protein_hd.ctrl_meanplot.png', sep=''), width = 15, height = 15, units = "cm", res=200)
 plot(protein_fb_test$`log2 Mean Control`, 
      protein_fb_test$`log2 Mean HD`, 
      col=protein_fb_test$colours, 
@@ -127,7 +122,7 @@ legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_fb_test$t
                                  paste("not significant (",as.numeric(table(protein_fb_test$type)["Not significant"]),")",sep = "")),
        pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
 
-# dev.off()
+dev.off()
 
 # Significantly different 
 # Means
@@ -135,18 +130,19 @@ protein_fb_test_signdiff <- subset(protein_fb_test, protein_fb_test$type != 'Not
 # Up and down regulated for PANTHER
 protein_fb_test_upreg <- protein_fb_test_signdiff[which(protein_fb_test_signdiff$type == 'Upregulated'),]
 protein_fb_test_upreg <- merge(protein[,c('Gene', 'gene_unique')], protein_fb_test_upreg, by.y='Gene name', by.x='gene_unique')
-# write.table(protein_fb_test_upreg$Gene, quote=F, col.names = F, row.names = F, 
-# file='/Volumes/My Passport/hd_in/07.20_hd/5_proteomics/GO_analysis/upregulated/fb_protein_upreg.tab')
+write.table(protein_fb_test_upreg$Gene, quote=F, col.names = F, row.names = F,
+            file=paste(getwd(), '/5_proteomics/GO_analysis/upregulated/fb_protein_hd.ctrl_upreg.tab', sep=''))
 
 protein_fb_test_dwnreg <- protein_fb_test_signdiff[which(protein_fb_test_signdiff$type == 'Downregulated'),]
 protein_fb_test_dwnreg <- merge(protein[,c('Gene', 'gene_unique')], protein_fb_test_dwnreg, by.y='Gene name', by.x='gene_unique')
-# write.table(protein_fb_test_dwnreg$Gene, quote=F, col.names = F, row.names = F, 
-# file='/Volumes/My Passport/hd_in/07.20_hd/5_proteomics/GO_analysis/downregulated/fb_protein_dwnreg.tab')
+write.table(protein_fb_test_dwnreg$Gene, quote=F, col.names = F, row.names = F,
+            file=paste(getwd(), '/5_proteomics/GO_analysis/downregulated/fb_protein_hd.ctrl_dwnreg.tab', sep=''))
 
-# write.table(protein_fb_test$Gene, quote=F, col.names = F, row.names = F, 
-# file='/Volumes/My Passport/hd_in/07.20_hd/5_proteomics/GO_analysis/fb_protein_expressed.tab')
+write.table(protein_fb_test$Gene, quote=F, col.names = F, row.names = F,
+            file=paste(getwd(), '/5_proteomics/GO_analysis/fb_protein_hd.ctrl_expressed.tab', sep=''))
 
-# write.xlsx(protein_fb_test_signdiff[,-c((ncol(protein_fb_test_signdiff)-3):ncol(protein_fb_test_signdiff))], 
-# file='/Volumes/My Passport/hd_in/07.20_hd/5_proteomics/GO_analysis/fb_protein_signdiff.xlsx', row.names = F)
+write.xlsx(protein_fb_test_signdiff[,-c((ncol(protein_fb_test_signdiff)-3):ncol(protein_fb_test_signdiff))],
+           file=paste(getwd(), '/5_proteomics/GO_analysis/fb_protein_hd.ctrl_signdiff.xlsx', sep=''), row.names = F)
+
 save.image('fb_protein_hd_vs_ctrl.RData')
 

@@ -1,4 +1,4 @@
-setwd('/Volumes/My Passport/hd_in/')
+setwd('/Volumes/My Passport/hd_in/24.02.20/')
 load('in_protein_hd_vs_ctrl.RData')
 
 # Overlap with RNAseq ----
@@ -21,30 +21,30 @@ colnames(rna_norm_fb_test_dwnreg) <- c("gene_id","Gene id","50% quartile Control
                                        "Shapiro Pvalue - HD","T","Pvalue","Low conf int","High conf int","type",
                                        "colours","cexs","Gene")
 
-# write.xlsx(x = rna_norm_in_test_upreg[,to_file], row.names = F,
-#            file = "/Volumes/My Passport/hd_in/07.20_hd/tables/protein_rna_signdiff_genes.xlsx",
-#            sheetName = "iN (RNA) - Upreg in HD")
-# write.xlsx(x = rna_norm_in_test_dwnreg[,to_file],  row.names = F,
-#            file = "/Volumes/My Passport/hd_in/07.20_hd/tables/protein_rna_signdiff_genes.xlsx",
-#            sheetName = "iN (RNA) - Downreg in HD", append=TRUE)
-# write.xlsx(x = rna_norm_fb_test_upreg[,to_file],  row.names = F,
-#            file = "/Volumes/My Passport/hd_in/07.20_hd/tables/protein_rna_signdiff_genes.xlsx",
-#            sheetName = "FB (RNA) - Upreg in HD", append=TRUE)
-# write.xlsx(x = rna_norm_fb_test_dwnreg[,to_file],  row.names = F,
-#            file = "/Volumes/My Passport/hd_in/07.20_hd/tables/protein_rna_signdiff_genes.xlsx",
-#            sheetName = "FB (RNA) - Downreg in HD", append=TRUE)
-# write.xlsx(x = protein_in_test_upreg[,to_file], row.names = F, 
-#            file = "/Volumes/My Passport/hd_in/07.20_hd/tables/protein_rna_signdiff_genes.xlsx",
-#            sheetName = "iN (Protein) - Upreg in HD", append=TRUE)
-# write.xlsx(x = protein_in_test_dwnreg[,to_file], row.names = F, 
-#            file = "/Volumes/My Passport/hd_in/07.20_hd/tables/protein_rna_signdiff_genes.xlsx",
-#            sheetName = "iN (Protein) - Downreg in HD", append=TRUE)
-# write.xlsx(x = protein_fb_test_upreg[,to_file], row.names = F, 
-#            file = "/Volumes/My Passport/hd_in/07.20_hd/tables/protein_rna_signdiff_genes.xlsx",
-#            sheetName = "FB (Protein) - Upreg in HD", append=TRUE)
-# write.xlsx(x = protein_fb_test_dwnreg[,to_file], row.names = F, 
-#            file = "/Volumes/My Passport/hd_in/07.20_hd/tables/protein_rna_signdiff_genes.xlsx",
-#            sheetName = "FB (Protein) - Downreg in HD", append=TRUE)
+write.xlsx(x = rna_norm_in_test_upreg[,to_file], row.names = F,
+           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           sheetName = "iN (RNA) - Upreg in HD")
+write.xlsx(x = rna_norm_in_test_dwnreg[,to_file],  row.names = F,
+           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           sheetName = "iN (RNA) - Downreg in HD", append=TRUE)
+write.xlsx(x = rna_norm_fb_test_upreg[,to_file],  row.names = F,
+           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           sheetName = "FB (RNA) - Upreg in HD", append=TRUE)
+write.xlsx(x = rna_norm_fb_test_dwnreg[,to_file],  row.names = F,
+           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           sheetName = "FB (RNA) - Downreg in HD", append=TRUE)
+write.xlsx(x = protein_in_test_upreg[,to_file], row.names = F,
+           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           sheetName = "iN (Protein) - Upreg in HD", append=TRUE)
+write.xlsx(x = protein_in_test_dwnreg[,to_file], row.names = F,
+           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           sheetName = "iN (Protein) - Downreg in HD", append=TRUE)
+write.xlsx(x = protein_fb_test_upreg[,to_file], row.names = F,
+           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           sheetName = "FB (Protein) - Upreg in HD", append=TRUE)
+write.xlsx(x = protein_fb_test_dwnreg[,to_file], row.names = F,
+           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep = ''),
+           sheetName = "FB (Protein) - Downreg in HD", append=TRUE)
 # UPSET 
 input <- data.frame(gene_name=unique(c(rna_norm_in_test_upreg$Gene,
                                        rna_norm_fb_test_upreg$Gene,

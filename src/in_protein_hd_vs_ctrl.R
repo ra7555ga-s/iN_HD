@@ -99,7 +99,8 @@ protein_in_test$colours <- ifelse(protein_in_test$type == 'Downregulated', 'stee
 # Size of the points for the mean plot
 protein_in_test$cexs <- ifelse(protein_in_test$type != "Not significant" , 1, 0.5)
 
-png(paste(getwd(), '/plots/in_protein_hd.ctrl_meanplot.png', sep=''), width = 15, height = 15, units = "cm", res=200)
+# png(paste(getwd(), '/plots/in_protein_hd.ctrl_meanplot.png', sep=''), width = 15, height = 15, units = "cm", res=200)
+pdf(paste(getwd(), '/plots/in_protein_hd.ctrl_meanplot.pdf', sep=''))
 plot(log2(protein_in_test$`50% quartile Control`), 
      log2(protein_in_test$`50% quartile HD`), 
      col=protein_in_test$colours, 
@@ -107,7 +108,8 @@ plot(log2(protein_in_test$`50% quartile Control`),
      pch=16, 
      xlab='log2(mean Control)', 
      ylab='log2(mean HD)',
-     main='Protein iN - HD vs Control (p-value < 0.05; |log2FC| > 0)')#, ylim=c(14,30), xlim=c(14,30))
+     main='Protein iN - HD vs Control (p-value < 0.05; |log2FC| > 0)',
+     ylim=c(3.7, 5), xlim=c(3.8, 5))#, ylim=c(14,30), xlim=c(14,30))
 
 legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_in_test$type)["Upregulated"]),")",sep=""),
                                  paste("down (",as.numeric(table(protein_in_test$type)["Downregulated"]),")",sep = ""),
@@ -116,19 +118,37 @@ legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_in_test$t
 
 dev.off()
 
-protein_in_test_upreg <- protein_in_test[which(protein_in_test$type == 'Upregulated'),]
-protein_in_test_upreg <- merge(protein[,c('Gene', 'gene_unique')], protein_in_test_upreg, by.y='Gene name', by.x='gene_unique')
-write.table(protein_in_test_upreg$`Gene`, quote=F, col.names = F, row.names = F,
-            file=paste(getwd(), '/5_proteomics/GO_analysis/upregulated/in_protein_hd.ctrl_upreg.tab', sep=''))
+svg(paste(getwd(), '/plots/in_protein_hd.ctrl_meanplot.svg', sep=''))
+plot(log2(protein_in_test$`50% quartile Control`), 
+     log2(protein_in_test$`50% quartile HD`), 
+     col=protein_in_test$colours, 
+     cex=protein_in_test$cexs, 
+     pch=16, 
+     xlab='log2(mean Control)', 
+     ylab='log2(mean HD)',
+     main='Protein iN - HD vs Control (p-value < 0.05; |log2FC| > 0)',
+     ylim=c(3.7, 5), xlim=c(3.8, 5))#, ylim=c(14,30), xlim=c(14,30))
 
-protein_in_test_dwnreg <- protein_in_test[which(protein_in_test$type == 'Downregulated'),]
-protein_in_test_dwnreg <- merge(protein[,c('Gene', 'gene_unique')], protein_in_test_dwnreg, by.y='Gene name', by.x='gene_unique')
-write.table(protein_in_test_dwnreg$`Gene`, quote=F, col.names = F, row.names = F,
-            file=paste(getwd(), '/5_proteomics/GO_analysis/downregulated/in_protein_hd.ctrl_dwnreg.tab', sep=''))
+legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_in_test$type)["Upregulated"]),")",sep=""),
+                                 paste("down (",as.numeric(table(protein_in_test$type)["Downregulated"]),")",sep = ""),
+                                 paste("not significant (",as.numeric(table(protein_in_test$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
 
-protein_in_test <- merge(protein[,c('Gene', 'gene_unique')], protein_in_test, by.y='Gene name', by.x='gene_unique')
-write.table(protein_in_test$`Gene`, quote=F, col.names = F, row.names = F,
-            file=paste(getwd(), '/5_proteomics/GO_analysis/in_protein_hd.ctrl_expressed.tab', sep=''))
+dev.off()
+
+# protein_in_test_upreg <- protein_in_test[which(protein_in_test$type == 'Upregulated'),]
+# protein_in_test_upreg <- merge(protein[,c('Gene', 'gene_unique')], protein_in_test_upreg, by.y='Gene name', by.x='gene_unique')
+# write.table(protein_in_test_upreg$`Gene`, quote=F, col.names = F, row.names = F,
+#             file=paste(getwd(), '/5_proteomics/GO_analysis/upregulated/in_protein_hd.ctrl_upreg.tab', sep=''))
+# 
+# protein_in_test_dwnreg <- protein_in_test[which(protein_in_test$type == 'Downregulated'),]
+# protein_in_test_dwnreg <- merge(protein[,c('Gene', 'gene_unique')], protein_in_test_dwnreg, by.y='Gene name', by.x='gene_unique')
+# write.table(protein_in_test_dwnreg$`Gene`, quote=F, col.names = F, row.names = F,
+#             file=paste(getwd(), '/5_proteomics/GO_analysis/downregulated/in_protein_hd.ctrl_dwnreg.tab', sep=''))
+# 
+# protein_in_test <- merge(protein[,c('Gene', 'gene_unique')], protein_in_test, by.y='Gene name', by.x='gene_unique')
+# write.table(protein_in_test$`Gene`, quote=F, col.names = F, row.names = F,
+#             file=paste(getwd(), '/5_proteomics/GO_analysis/in_protein_hd.ctrl_expressed.tab', sep=''))
 
 save.image('in_protein_hd_vs_ctrl.RData')
 

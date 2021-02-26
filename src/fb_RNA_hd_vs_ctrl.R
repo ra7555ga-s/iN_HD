@@ -94,7 +94,25 @@ rna_norm_fb_test$colours <- ifelse(rna_norm_fb_test$type == 'Downregulated', 'st
 # Size of the points for the mean plot
 rna_norm_fb_test$cexs <- ifelse(rownames(rna_norm_fb_test) %in% rownames(rna_signdiff_fb) , 1, 0.5)
 
-png(paste(getwd(), '/plots/fb_rna_hd.ctrl_meanplot.png', sep=''), width = 15, height = 15, units = "cm", res=200)
+# png(paste(getwd(), '/plots/fb_rna_hd.ctrl_meanplot.png', sep=''), width = 15, height = 15, units = "cm", res=200)
+pdf(paste(getwd(), '/plots/fb_rna_hd.ctrl_meanplot.pdf', sep=''))
+plot(log2(rna_norm_fb_test$`Mean Control`+0.5), 
+     log2(rna_norm_fb_test$`Mean HD`+0.5), 
+     col=rna_norm_fb_test$colours, 
+     cex=rna_norm_fb_test$cexs, 
+     pch=16, 
+     xlab='log2(mean Control)', 
+     ylab='log2(mean HD)',
+     main='RNA FB - HD vs Control (p-value < 0.05; |log2FC| > 0)')
+
+legend("bottomright", legend = c(paste("up (",as.numeric(table(rna_norm_fb_test$type)["Upregulated"]),")",sep=""),
+                                 paste("down (",as.numeric(table(rna_norm_fb_test$type)["Downregulated"]),")",sep = ""),
+                                 paste("not significant (",as.numeric(table(rna_norm_fb_test$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+
+dev.off()
+
+svg(paste(getwd(), '/plots/fb_rna_hd.ctrl_meanplot.svg', sep=''))
 plot(log2(rna_norm_fb_test$`Mean Control`+0.5), 
      log2(rna_norm_fb_test$`Mean HD`+0.5), 
      col=rna_norm_fb_test$colours, 

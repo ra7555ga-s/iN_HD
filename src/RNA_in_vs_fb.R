@@ -107,11 +107,10 @@ rna_signdiff <- rna_norm_test[which(rna_norm_test$Pvalue < 0.05),]
 rna_norm_test$type <- ifelse(rna_norm_test$Pvalue < 0.05 & rna_norm_test$Log2FC < 0, 'Downregulated', 
                              ifelse(rna_norm_test$Pvalue < 0.05 & rna_norm_test$Log2FC > 0, 'Upregulated', 'Not significant'))
 
-# Put them colorrsss
 rna_norm_test$colours <- ifelse(rna_norm_test$type == 'Downregulated', 'steelblue', 
                                 ifelse(rna_norm_test$type == 'Upregulated', 'tomato3', 'black'))
 
-png(paste(getwd(), '/plots/rna_fb.in_meanplot.png', sep=''),res=200, width=15, height=15,units = "cm")
+pdf(paste(getwd(), '/plots/rna_fb.in_meanplot.pdf', sep=''))
 plot(log2(rna_norm_test$`Mean iN`+0.5), 
      log2(rna_norm_test$`Mean FB`+0.5), 
      col=rna_norm_test$colours, 
@@ -128,7 +127,23 @@ legend("bottomright", legend = c(paste("up (",as.numeric(table(rna_norm_test$typ
 
 dev.off()
 
-# Significantly different 
+svg(paste(getwd(), '/plots/rna_fb.in_meanplot.svg', sep=''))
+plot(log2(rna_norm_test$`Mean iN`+0.5), 
+     log2(rna_norm_test$`Mean FB`+0.5), 
+     col=rna_norm_test$colours, 
+     cex=0.5, 
+     pch=16, 
+     xlab='log2(mean iN)', 
+     ylab='log2(mean FB)',
+     main='RNA FB vs iN (p-value < 0.05; |log2FC| > 0)')
+
+legend("bottomright", legend = c(paste("up (",as.numeric(table(rna_norm_test$type)["Upregulated"]),")",sep=""),
+                                 paste("down (",as.numeric(table(rna_norm_test$type)["Downregulated"]),")",sep = ""),
+                                 paste("not significant (",as.numeric(table(rna_norm_test$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+dev.off()
+
+# Significantly different
 rna_norm_test_sign <- subset(rna_norm_test, rna_norm_test$type != 'Not significant')
 
 # Up and down regulated for PANTHER
@@ -143,5 +158,26 @@ write.table(rna_norm_test_dwnreg$gene_name, quote=F, col.names = F, row.names = 
 rna_norm_test <- merge(rna_norm_test, unique(gene_transcript[,c('gene_id', 'gene_name')]), by.x='Gene id', by.y='gene_id')
 write.table(rna_norm_test$gene_name, quote=F, col.names = F, row.names = F,
             file=paste(getwd(), '/3_stdmapping/GO_analysis/rna_expressed.tab', sep=''))
+
+
+to_file <- c("Gene", "50% quartile iN", "50% quartile FB", "Log2FC", "Shapiro Pvalue - iN",
+             "Shapiro Pvalue - FB", "T", "Pvalue", "Low conf int", "High conf int", "type")
+rna_norm_test_upreg_toxlsx <- rna_norm_test_upreg
+colnames(rna_norm_test_upreg_toxlsx) <- c("gene_id","Gene id","50% quartile iN","50% quartile FB",
+                                   "Log2FC","Shapiro Pvalue - iN",
+                                   "Shapiro Pvalue - FB","T","Pvalue","Low conf int","High conf int","type",
+                                   "colours","Gene")
+rna_norm_in_test_dwnreg_toxlsx <- rna_norm_test_dwnreg
+colnames(rna_norm_in_test_dwnreg_toxlsx) <- c("gene_id","Gene id","50% quartile iN","50% quartile FB",
+                                       "Log2FC","Shapiro Pvalue - iN",
+                                       "Shapiro Pvalue - FB","T","Pvalue","Low conf int","High conf int","type",
+                                       "colours","Gene")
+
+write.xlsx(x = rna_norm_test_upreg_toxlsx[,to_file], row.names = F,
+           file = paste(getwd(), "/tables/rna_fb.in_signdiff_genes.xlsx", sep=''),
+           sheetName = "Upreg in FB | Downreg in iN")
+write.xlsx(x = rna_norm_in_test_dwnreg_toxlsx[,to_file],  row.names = F,
+           file = paste(getwd(), "/tables/rna_fb.in_signdiff_genes.xlsx", sep=''),
+           sheetName = "Downreg in FB | Upreg in iN", append=TRUE)
 
 save.image('RNA_in_vs_fb.RData')

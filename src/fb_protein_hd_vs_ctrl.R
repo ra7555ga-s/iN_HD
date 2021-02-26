@@ -107,7 +107,8 @@ protein_fb_test$cexs <- ifelse(protein_fb_test$Pvalue < 0.05 , 1, 0.5)
 protein_fb_test$`log2 Mean Control` <- log2(protein_fb_test$`50% quartile Control` + 0.5) 
 protein_fb_test$`log2 Mean HD` <- log2(protein_fb_test$`50% quartile HD` + 0.5)
 
-png(paste(getwd(), '/plots/fb_protein_hd.ctrl_meanplot.png', sep=''), width = 15, height = 15, units = "cm", res=200)
+# png(paste(getwd(), '/plots/fb_protein_hd.ctrl_meanplot.png', sep=''), width = 15, height = 15, units = "cm", res=200)
+pdf(paste(getwd(), '/plots/fb_protein_hd.ctrl_meanplot.pdf', sep=''))
 plot(protein_fb_test$`log2 Mean Control`, 
      protein_fb_test$`log2 Mean HD`, 
      col=protein_fb_test$colours, 
@@ -124,25 +125,42 @@ legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_fb_test$t
 
 dev.off()
 
-# Significantly different 
-# Means
-protein_fb_test_signdiff <- subset(protein_fb_test, protein_fb_test$type != 'Not significant')
-# Up and down regulated for PANTHER
-protein_fb_test_upreg <- protein_fb_test_signdiff[which(protein_fb_test_signdiff$type == 'Upregulated'),]
-protein_fb_test_upreg <- merge(protein[,c('Gene', 'gene_unique')], protein_fb_test_upreg, by.y='Gene name', by.x='gene_unique')
-write.table(protein_fb_test_upreg$Gene, quote=F, col.names = F, row.names = F,
-            file=paste(getwd(), '/5_proteomics/GO_analysis/upregulated/fb_protein_hd.ctrl_upreg.tab', sep=''))
+svg(paste(getwd(), '/plots/fb_protein_hd.ctrl_meanplot.svg', sep=''))
+plot(protein_fb_test$`log2 Mean Control`, 
+     protein_fb_test$`log2 Mean HD`, 
+     col=protein_fb_test$colours, 
+     cex=protein_fb_test$cexs, 
+     pch=16, 
+     xlab='log2(mean Control)', 
+     ylab='log2(mean HD)',
+     main='Protein FB - HD vs Control (p-value < 0.05; |log2FC| > 0)')
 
-protein_fb_test_dwnreg <- protein_fb_test_signdiff[which(protein_fb_test_signdiff$type == 'Downregulated'),]
-protein_fb_test_dwnreg <- merge(protein[,c('Gene', 'gene_unique')], protein_fb_test_dwnreg, by.y='Gene name', by.x='gene_unique')
-write.table(protein_fb_test_dwnreg$Gene, quote=F, col.names = F, row.names = F,
-            file=paste(getwd(), '/5_proteomics/GO_analysis/downregulated/fb_protein_hd.ctrl_dwnreg.tab', sep=''))
+legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_fb_test$type)["Upregulated"]),")",sep=""),
+                                 paste("down (",as.numeric(table(protein_fb_test$type)["Downregulated"]),")",sep = ""),
+                                 paste("not significant (",as.numeric(table(protein_fb_test$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
 
-write.table(protein_fb_test$Gene, quote=F, col.names = F, row.names = F,
-            file=paste(getwd(), '/5_proteomics/GO_analysis/fb_protein_hd.ctrl_expressed.tab', sep=''))
+dev.off()
 
-write.xlsx(protein_fb_test_signdiff[,-c((ncol(protein_fb_test_signdiff)-3):ncol(protein_fb_test_signdiff))],
-           file=paste(getwd(), '/5_proteomics/GO_analysis/fb_protein_hd.ctrl_signdiff.xlsx', sep=''), row.names = F)
+# # Significantly different 
+# # Means
+# protein_fb_test_signdiff <- subset(protein_fb_test, protein_fb_test$type != 'Not significant')
+# # Up and down regulated for PANTHER
+# protein_fb_test_upreg <- protein_fb_test_signdiff[which(protein_fb_test_signdiff$type == 'Upregulated'),]
+# protein_fb_test_upreg <- merge(protein[,c('Gene', 'gene_unique')], protein_fb_test_upreg, by.y='Gene name', by.x='gene_unique')
+# write.table(protein_fb_test_upreg$Gene, quote=F, col.names = F, row.names = F,
+#             file=paste(getwd(), '/5_proteomics/GO_analysis/upregulated/fb_protein_hd.ctrl_upreg.tab', sep=''))
+# 
+# protein_fb_test_dwnreg <- protein_fb_test_signdiff[which(protein_fb_test_signdiff$type == 'Downregulated'),]
+# protein_fb_test_dwnreg <- merge(protein[,c('Gene', 'gene_unique')], protein_fb_test_dwnreg, by.y='Gene name', by.x='gene_unique')
+# write.table(protein_fb_test_dwnreg$Gene, quote=F, col.names = F, row.names = F,
+#             file=paste(getwd(), '/5_proteomics/GO_analysis/downregulated/fb_protein_hd.ctrl_dwnreg.tab', sep=''))
+# 
+# write.table(protein_fb_test$Gene, quote=F, col.names = F, row.names = F,
+#             file=paste(getwd(), '/5_proteomics/GO_analysis/fb_protein_hd.ctrl_expressed.tab', sep=''))
+# 
+# write.xlsx(protein_fb_test_signdiff[,-c((ncol(protein_fb_test_signdiff)-3):ncol(protein_fb_test_signdiff))],
+#            file=paste(getwd(), '/5_proteomics/GO_analysis/fb_protein_hd.ctrl_signdiff.xlsx', sep=''), row.names = F)
 
 save.image('fb_protein_hd_vs_ctrl.RData')
 

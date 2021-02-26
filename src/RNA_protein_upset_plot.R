@@ -22,28 +22,28 @@ colnames(rna_norm_fb_test_dwnreg) <- c("gene_id","Gene id","50% quartile Control
                                        "colours","cexs","Gene")
 
 write.xlsx(x = rna_norm_in_test_upreg[,to_file], row.names = F,
-           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           file = paste(getwd(), "/tables/protein_rna_hd.ctrl_signdiff_genes.xlsx", sep=''),
            sheetName = "iN (RNA) - Upreg in HD")
 write.xlsx(x = rna_norm_in_test_dwnreg[,to_file],  row.names = F,
-           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           file = paste(getwd(), "/tables/protein_rna_hd.ctrl_signdiff_genes.xlsx", sep=''),
            sheetName = "iN (RNA) - Downreg in HD", append=TRUE)
 write.xlsx(x = rna_norm_fb_test_upreg[,to_file],  row.names = F,
-           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           file = paste(getwd(), "/tables/protein_rna_hd.ctrl_signdiff_genes.xlsx", sep=''),
            sheetName = "FB (RNA) - Upreg in HD", append=TRUE)
 write.xlsx(x = rna_norm_fb_test_dwnreg[,to_file],  row.names = F,
-           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           file = paste(getwd(), "/tables/protein_rna_hd.ctrl_signdiff_genes.xlsx", sep=''),
            sheetName = "FB (RNA) - Downreg in HD", append=TRUE)
 write.xlsx(x = protein_in_test_upreg[,to_file], row.names = F,
-           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           file = paste(getwd(), "/tables/protein_rna_hd.ctrl_signdiff_genes.xlsx", sep=''),
            sheetName = "iN (Protein) - Upreg in HD", append=TRUE)
 write.xlsx(x = protein_in_test_dwnreg[,to_file], row.names = F,
-           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           file = paste(getwd(), "/tables/protein_rna_hd.ctrl_signdiff_genes.xlsx", sep=''),
            sheetName = "iN (Protein) - Downreg in HD", append=TRUE)
 write.xlsx(x = protein_fb_test_upreg[,to_file], row.names = F,
-           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep=''),
+           file = paste(getwd(), "/tables/protein_rna_hd.ctrl_signdiff_genes.xlsx", sep=''),
            sheetName = "FB (Protein) - Upreg in HD", append=TRUE)
 write.xlsx(x = protein_fb_test_dwnreg[,to_file], row.names = F,
-           file = paste(getwd(), "/tables/protein_rna_signdiff_genes.xlsx", sep = ''),
+           file = paste(getwd(), "/tables/protein_rna_hd.ctrl_signdiff_genes.xlsx", sep = ''),
            sheetName = "FB (Protein) - Downreg in HD", append=TRUE)
 # UPSET 
 input <- data.frame(gene_name=unique(c(rna_norm_in_test_upreg$Gene,
@@ -76,4 +76,18 @@ p <- upset(input, sets = c("RNA.Downreg.iN", # #417096
            mainbar.y.label = "Gene Intersections", sets.x.label = "Genes Per Group", 
            keep.order=TRUE, 
            sets.bar.color=c('#417096', '#417096', '#9dc3e3', '#9dc3e3', '#d15685', '#d15685', '#f2a7c4', '#f2a7c4'))
+
+
+svg(paste(getwd(), "/plots/upset.svg", sep=''))
+print(p)
+dev.off()
+
+pdf(paste(getwd(), "/plots/upset.pdf", sep=''))
+print(p)
+dev.off()
+
+write.xlsx(x = input, row.names = F,
+           file = paste(getwd(), "/tables/upset_input.xlsx", sep = ''))
+
+save.image('RNA_protein_upset_plot.RData')
 

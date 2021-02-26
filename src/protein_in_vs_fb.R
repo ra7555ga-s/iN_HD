@@ -1,5 +1,5 @@
 setwd('/Volumes/My Passport/hd_in/24.02.20/')
-load('RNA_GOanalysis.RData')
+load('RNA_GOanalysis_v16.RData')
 
 protein <- fread('/Volumes/My Passport/hd_in/09.19_hd/5_proteomics/20200309_HDProteomics_Log2_SubtractMedianColumn_AverageSample_+20.txt', data.table=F)
 protein <- protein[,c('Gene', colnames(protein)[which(colnames(protein) %in% colnames(rna))])]
@@ -73,7 +73,7 @@ protein_test$`High conf int` <- as.numeric(as.character(protein_test$`High conf 
 # Filter out genes that are not normally distributed
 protein_test <- protein_test[which(protein_test$`Shapiro Pvalue - iN` > 0.05 & protein_test$`Shapiro Pvalue - FB` > 0.05),]
 # Get the counts of the ones that are normally distributed
-protein <- subset(protein, protein$gene_id %in% protein_test$`Gene name`)
+# protein <- subset(protein, protein$gene_name %in% protein_test$`Gene name`)
 
 # Which one of those is significantly different?
 protein_signdiff <- protein_test[which(protein_test$Pvalue < 0.05),]
@@ -89,7 +89,8 @@ protein_test$colours <- ifelse(protein_test$type == 'Downregulated', 'steelblue'
 # Size of the points for the mean plot
 protein_test$cexs <- ifelse(rownames(protein_test) %in% rownames(protein_signdiff) , 1, 0.5)
 
-png(paste(getwd(), '/plots/protein_fb.in_meanplot.png', sep=''), res = 200, height = 15, width = 15, units = "cm")
+# png(paste(getwd(), '/plots/protein_fb.in_meanplot.png', sep=''), res = 200, height = 15, width = 15, units = "cm")
+pdf(paste(getwd(), '/plots/protein_fb.in_meanplot.pdf', sep=''))
 plot(log2(protein_test$`Mean iN`+0.5), 
      log2(protein_test$`Mean FB`+0.5), 
      col=protein_test$colours, 
@@ -105,5 +106,48 @@ legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_test$type
        pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
 
 dev.off()
+
+svg(paste(getwd(), '/plots/protein_fb.in_meanplot.svg', sep=''))
+plot(log2(protein_test$`Mean iN`+0.5), 
+     log2(protein_test$`Mean FB`+0.5), 
+     col=protein_test$colours, 
+     cex=0.5, 
+     pch=16, 
+     xlab='log2(mean iN)', 
+     ylab='log2(mean FB)', 
+     main='Protein FB vs iN (p-value < 0.05; |log2FC| > 0)')
+
+legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_test$type)["Upregulated"]),")",sep=""),
+                                 paste("down (",as.numeric(table(protein_test$type)["Downregulated"]),")",sep = ""),
+                                 paste("not significant (",as.numeric(table(protein_test$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+
+dev.off()
+
+# Significantly different 
+protein_test_sign <- subset(protein_test, protein_test$type != 'Not significant')
+
+protein_test_upreg <- protein_test[which(protein_test$type == 'Upregulated'),]
+protein_test_dwnreg <- protein_test[which(protein_test$type == 'Downregulated'),]
+
+to_file <- c("Gene", "50% quartile iN", "50% quartile FB", "Log2FC", "Shapiro Pvalue - iN",
+             "Shapiro Pvalue - FB", "T", "Pvalue", "Low conf int", "High conf int", "type")
+protein_test_upreg_toxlsx <- protein_test_upreg
+colnames(protein_test_upreg_toxlsx) <- c("Gene","50% quartile iN","50% quartile FB",
+                                          "Log2FC","Shapiro Pvalue - iN",
+                                          "Shapiro Pvalue - FB","T","Pvalue","Low conf int","High conf int","type",
+                                          "colours","cexs")
+protein_test_dwnreg_toxlsx <- protein_test_dwnreg
+colnames(protein_test_dwnreg_toxlsx) <- c("Gene","50% quartile iN","50% quartile FB",
+                                              "Log2FC","Shapiro Pvalue - iN",
+                                              "Shapiro Pvalue - FB","T","Pvalue","Low conf int","High conf int","type",
+                                              "colours","cexs")
+
+write.xlsx(x = protein_test_upreg_toxlsx[,to_file], row.names = F,
+           file = paste(getwd(), "/tables/protein_fb.in_signdiff_genes.xlsx", sep=''),
+           sheetName = "Upreg in FB | Downreg in iN")
+write.xlsx(x = protein_test_dwnreg_toxlsx[,to_file],  row.names = F,
+           file = paste(getwd(), "/tables/protein_fb.in_signdiff_genes.xlsx", sep=''),
+           sheetName = "Downreg in FB | Upreg in iN", append=TRUE)
 
 save.image('protein_in_vs_fb.RData')

@@ -152,7 +152,7 @@ GO_json <- function(file_name, prefix, botlog2fc=NULL, toplog2fc=NULL, morethan=
     plot <- plot + scale_fill_manual(values=getPalette)
   }
   
-  # ggsave(plot, file=paste(prefix, 'fdr.png', sep = ''), width=32, height=length(results_for_plot$GO_label)/1.2, units="cm")
+  ggsave(plot, file=paste(prefix, 'fdr.png', sep = ''), width=32, height=length(results_for_plot$GO_label)/1.2, units="cm")
   
   if(!is.null(pdf_width)){
     if(!is.null(pdf_heigth)){
@@ -185,6 +185,16 @@ GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/
 
 GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/upregulated/slim_biological_process/fb_rna_hd.ctrl_upreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/upregulated/fb_rna_hd.ctrl_upreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth= 10)
 GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/downregulated/slim_biological_process/fb_rna_hd.ctrl_dwnreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/downregulated/fb_rna_hd.ctrl_dwnreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 15, pdf_heigth= 15)
+
+
+# GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/5_proteomics/GO_analysis/upregulated/fb_protein_hd.ctrl_upreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/5_proteomics/GO_analysis/upregulated/fb_protein_hd.ctrl_upreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth= 15)
+# GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/5_proteomics/GO_analysis/upregulated/in_protein_hd.ctrl_upreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/5_proteomics/GO_analysis/upregulated/in_protein_hd.ctrl_upreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth = 15)
+# 
+# GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/5_proteomics/GO_analysis/downregulated/fb_protein_hd.ctrl_dwnreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/5_proteomics/GO_analysis/downregulated/fb_protein_hd.ctrl_dwnreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth= 15)
+# GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/5_proteomics/GO_analysis/downregulated/in_protein_hd.ctrl_dwnreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/5_proteomics/GO_analysis/downregulated/in_protein_hd.ctrl_dwnreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth = 15)
+# 
+# GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/5_proteomics/GO_analysis/upregulated/protein_fb.in_upreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/5_proteomics/GO_analysis/upregulated/protein_fb.in_upreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth= 15)
+# GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/5_proteomics/GO_analysis/downregulated/protein_fb.in_dwnreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/5_proteomics/GO_analysis/downregulated/protein_fb.in_dwnreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth = 15)
 
 
 save.image('RNA_GOanalysis.RData')

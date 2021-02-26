@@ -1,5 +1,5 @@
 setwd('/Volumes/My Passport/hd_in/24.02.20/')
-load('in_RNA_hd_vs_ctrl.RData')
+load('RNA_GOanalysis.RData')
 
 # Settings ----
 library(ggplot2)
@@ -172,4 +172,4 @@ GO_json <- function(file_name, prefix, botlog2fc=NULL, toplog2fc=NULL, morethan=
 GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/upregulated/slim_biological_process/rna_fb.in_upreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/upregulated/rna_fb.in_upreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth= 15)
 GO_json(file_name='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/downregulated/slim_biological_process/rna_fb.in_dwnreg_biological_process.json', prefix='/Volumes/My Passport/hd_in/24.02.20/3_stdmapping/GO_analysis/downregulated/rna_fb.in_dwnreg_bp_', morethan = 2, botlog2fc = -0.5, toplog2fc = 0.5, pdf_width = 20, pdf_heigth = 15)
 
-save.image('RNA_GOanalysis.RData')
+save.image('RNA_GOanalysis_v16.RData')

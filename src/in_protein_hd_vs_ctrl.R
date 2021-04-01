@@ -14,6 +14,22 @@ colnames(protein_in)[(ncol(protein_in)-1):ncol(protein_in)] <- c('gene_name', 'g
 protein_in[is.na(protein_in)] <- 0
 protein_fb[is.na(protein_fb)] <- 0
 
+autophagy_protein_in_control <- protein_in[which(protein_in$gene_name %in% autophagy), ]
+rownames(autophagy_protein_in_control) <- autophagy_protein_in_control$gene_unique
+autophagy_protein_in_control <- autophagy_protein_in_control[,subset(coldata, coldata$CellType == 'IN' & coldata$Stage == "CTRL")$Sample]
+library(pheatmap)
+autophagy_protein_in_control_colannot <- coldata[which(coldata$CellType == 'IN' & coldata$Stage == "CTRL"), c("AgeContinuous", "RealName"), drop=F]
+rownames(autophagy_protein_in_control_colannot) <- autophagy_protein_in_control_colannot$RealName
+
+colnames(autophagy_protein_in_control) <- coldata[colnames(autophagy_protein_in_control), "RealName"]
+
+pdf('/Volumes/My Passport/hd_in/24.02.20/plots/protein_in_control_autophagy.pdf', height = 50)
+pheatmap(autophagy_protein_in_control, 
+         scale='row', 
+         annotation_col = autophagy_protein_in_control_colannot[,"AgeContinuous", drop=F], cluster_rows = T,
+         fontsize = 7)
+dev.off()
+
 # Protein iN ----
 protein_in_test <- apply(protein_in, 1, FUN=function(row){
   row <- as.data.frame(row)

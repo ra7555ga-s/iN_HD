@@ -1,3 +1,5 @@
+library(DESeq2)
+
 setwd('/Volumes/My Passport/hd_in/24.02.20/')
 load('fb_RNA_hd_vs_ctrl.RData')
 
@@ -11,6 +13,26 @@ res_in <- results(dds_in)
 
 rna_norm_in <- as.data.frame(counts(dds_in, normalize=T))
 rna_norm_in$gene_id <- rownames(rna_norm_in)
+
+library(data.table)
+autophagy <- fread('/Volumes/My Passport/hd_in/autophagy_gene_list.txt', header = F, data.table = F)$V1
+
+autophagy_rna_norm_in_control <- merge(rna_norm_in, unique(gene_transcript[,c(2,3)]), by='gene_id')
+autophagy_rna_norm_in_control <- autophagy_rna_norm_in_control[which(autophagy_rna_norm_in_control$gene_name %in% autophagy), ]
+rownames(autophagy_rna_norm_in_control) <- make.unique(autophagy_rna_norm_in_control$gene_name)
+colnames(autophagy_rna_norm_in_control)[which(colnames(autophagy_rna_norm_in_control) %in% coldata$Sample)] <- coldata[colnames(autophagy_rna_norm_in_control)[which(colnames(autophagy_rna_norm_in_control) %in% coldata$Sample)], "RealName"]
+
+library(pheatmap)
+autophagy_rna_norm_in_control_colannot <- coldata[which(coldata$CellType == 'IN' & coldata$Stage == "CTRL"), c("AgeContinuous", "RealName"), drop=F]
+rownames(autophagy_rna_norm_in_control_colannot) <- autophagy_rna_norm_in_control_colannot$RealName
+autophagy_rna_norm_in_control <- autophagy_rna_norm_in_control[,subset(coldata, coldata$CellType == 'IN' & coldata$Stage == "CTRL")$RealName]
+
+pdf('/Volumes/My Passport/hd_in/24.02.20/plots/RNA_in_control_autophagy.pdf', height = 50)
+pheatmap(log2(autophagy_rna_norm_in_control[which(rowSums(autophagy_rna_norm_in_control) > 0),]+0.5), 
+         scale='row', 
+         annotation_col = autophagy_rna_norm_in_control_colannot[,"AgeContinuous", drop=F],
+         fontsize = 7)
+dev.off()
 
 rna_norm_in_test <- apply(rna_norm_in, 1, FUN=function(row){
   row <- as.data.frame(row)

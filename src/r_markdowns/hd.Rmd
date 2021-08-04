@@ -1,0 +1,1053 @@
+---
+title: "Distinct sub-cellular autophagy impairments occur independently of prottein aggregation in induced neurons from patients with Huntington's disease"
+author: "RG"
+date: "8/2/2021"
+output:   
+  html_document:
+    code_folding: show
+---
+
+## Settings
+Here we load all packages we will be needing, create the folders we will be working on, define functions and read input files (annotations, counts and sample annotation)
+```{r settings_functions_input, class.source = 'fold-hide', message=FALSE}
+library(ggplot2)
+library(RColorBrewer)
+library(data.table)
+library(writexl)
+library(ggpubr)
+library(DESeq2)
+library(pheatmap)
+library(stringr)
+library(rjson)
+library(Hmisc)
+
+path <- "/Volumes/My Passport/hd_in/02.08.20_hd/"
+dir.create(paste(path, "tables", sep=""))
+dir.create(paste(path, "plots", sep=""))
+dir.create(paste(path, "GO_analysis", sep=""))
+
+more_10 <- function(row){
+  return(length(which(row > 10)))
+}
+
+t.test_row <- function(row, coldata, var, condition_base, condition_compare){
+  row <- as.data.frame(row)
+  colnames(row) <- row['gene_id',]
+  
+  row <- row[coldata$Column,,drop=F]
+  row <- merge(row, coldata[, var, drop=F], by='row.names')
+  row[,2] <- as.numeric(as.character(row[,2]))
+
+  mean_base <- mean(subset(row, row[,var] == condition_base)[, 2])
+  mean_compare <- mean(subset(row, row[,var] == condition_compare)[, 2])
+  
+  gene_id <- colnames(row)[2]
+  colnames(row) <- c('sample', 'expression', 'condition')
+  row$expression <- as.numeric(as.character(row$expression))
+  
+  if(sum(row$expression) > 0){
+    if(sum(subset(row, row$condition == condition_base)$expression) > 0){
+      normality_base <- shapiro.test(subset(row, row$condition == condition_base)$expression)
+    }
+    else{
+      normality_base <- data.frame(p.value=NA)
+    }
+    if(sum(subset(row, row$condition == condition_compare)$expression) > 0){
+      normality_compare <- shapiro.test(subset(row, row$condition == condition_compare)$expression)
+    }
+    else{
+      normality_compare <- data.frame(p.value=NA)
+    }
+    row$condition <- factor(row$condition, levels=c(condition_compare, condition_base))
+    test <- t.test(expression~condition, data=row, paired=F, exact=F)
+    
+    results <- c(gene_id, mean_base, mean_compare, log2((mean_compare/mean_base)), normality_base$p.value, normality_compare$p.value, test$statistic, test$p.value, test$conf.int)
+    
+  }
+  else{
+    results <- c(gene_id, mean_base, mean_compare, log2((mean_compare/mean_base)), NA, NA, NA,NA, NA, NA)
+  }
+  
+  names(results) <- c("Gene id", paste("Mean", condition_base), paste("Mean", condition_compare), "Log2FC",  paste('Shapiro Pvalue -', condition_base), paste('Shapiro Pvalue -', condition_compare), 'T', 'Pvalue', 'Low conf int', 'High conf int')
+  
+  return(results)
+}
+
+gene_transcript <- fread('/Volumes/My Passport/annotations/human/gencode/v30/gencode.v30.annotation.transcript.id.name.type.tab', data.table=F, header=F)
+colnames(gene_transcript) <- c('transcript_id', 'gene_id', 'gene_name', 'gene_type') 
+
+coldata <- fread('/Volumes/My Passport/hd_in/09.19_hd/CategoricalAnnotation.txt', data.table = F)
+rownames(coldata) <- coldata$Column
+coldata$Sample <- as.character(coldata$Sample)
+coldata$Column <- as.character(coldata$Column)
+
+rna <- fread('/Volumes/My Passport/hd_in/02.08.20_hd/3_stdmapping/1_readcounts/gene_count_matrix_0_p.csv', data.table=F)
+rownames(rna) <- rna$Geneid
+colnames(rna)[7:ncol(rna)] <- sapply(str_split(colnames(rna)[7:ncol(rna)], "/"), `[[`, 5)
+
+```
+
+## RNA data - iN vs fibroblasts
+
+The first thing we want to check is how similar or different fibroblasts and iNs really are. Here we produce a PCA plot and perform differential expression analysis with DESeq2.
+```{r rna_in_fb_pca, message=FALSE }
+# Filter out genes with less than 10 reads in one sample
+rna_expressed <- rna[which(apply(rna[,coldata$Column], 1, more_10) > 0), coldata$Column]
+
+dds_rna <- DESeqDataSetFromMatrix(rna_expressed[,coldata$Column], coldata, design= ~Stage)
+dds_rna$Stage <- relevel(dds_rna$Stage, 'CTRL')
+dds_rna <- DESeq(dds_rna)
+rna_expressed_norm <- as.data.frame(counts(dds_rna, normalize=T))
+vst_rna <- varianceStabilizingTransformation(dds_rna)
+pca <- plotPCA(vst_rna, intgroup=c("CellType", "Stage"))
+pca <- pca + theme_classic() + geom_hline(yintercept = 0) + geom_vline(xintercept = 0) + labs(colour="")  + ggtitle("PCA FB vs iN", subtitle = "RNA-seq") + theme(plot.title = element_text(hjust = 0.5, face="bold"), plot.subtitle = element_text(hjust = 0.5))
+
+pdf("/Volumes/My Passport/hd_in/02.08.20_hd/plots/SuppFig2a.pdf")
+pca
+dev.off()
+
+ggsave(filename = "/Volumes/My Passport/hd_in/02.08.20_hd/plots/SuppFig2a.svg", device = "svg", plot = pca)
+
+pca
+```
+
+To increase sensitivity (and aware of this approaches' limitations), we then used the median-of-ratios normalized counts (produced with DESeq2). We will be using our function `t.test_row` defined in the settings section. We are going to iterate over `rna_expressed_norm` using apply (on rows - 1), passing the variable we are testing, setting iNs as the reference or base condition.
+
+### Here we do:
+- T-tests of iNs vs fibroblasts 
+- Mean plot
+```{r rna_in_fb_t.tests_mean_plot, message=FALSE}
+rna_expressed_norm$gene_id <- rownames(rna_expressed_norm)
+
+# iNs as reference condition
+rna_norm_test2 <- apply(rna_expressed_norm, 1, FUN=t.test_row, coldata, "CellType", "IN", "FB")
+rna_norm_test2 <- as.data.frame(t(rna_norm_test2))
+rna_norm_test2$`Gene id` <- as.character(rna_norm_test2$`Gene id`)
+rna_norm_test2$`Mean IN` <- as.numeric(as.character(rna_norm_test2$`Mean IN`))
+rna_norm_test2$`Mean FB` <- as.numeric(as.character(rna_norm_test2$`Mean FB`))
+rna_norm_test2$`Log2FC` <- as.numeric(as.character(rna_norm_test2$`Log2FC`))
+rna_norm_test2$`Shapiro Pvalue - IN` <- as.numeric(as.character(rna_norm_test2$`Shapiro Pvalue - IN`))
+rna_norm_test2$`Shapiro Pvalue - FB` <- as.numeric(as.character(rna_norm_test2$`Shapiro Pvalue - FB`))
+rna_norm_test2$T <- as.numeric(as.character(rna_norm_test2$T))
+rna_norm_test2$Pvalue <- as.numeric(as.character(rna_norm_test2$Pvalue))
+rna_norm_test2$`Low conf int` <- as.numeric(as.character(rna_norm_test2$`Low conf int`))
+rna_norm_test2$`High conf int` <- as.numeric(as.character(rna_norm_test2$`High conf int`))
+# Filter out genes that are not normally distributed
+rna_norm_test2 <- rna_norm_test2[which(rna_norm_test2$`Shapiro Pvalue - IN` > 0.05 & rna_norm_test2$`Shapiro Pvalue - FB` > 0.05),]
+# Get the counts of the ones that are normally distributed
+rna_expressed_norm <- subset(rna_expressed_norm, rna_expressed_norm$gene_id %in% rna_norm_test2$`Gene id`)
+
+# Which one of those is significantly different?
+rna_signdiff <- rna_norm_test2[which(rna_norm_test2$Pvalue < 0.05),]
+# Tag them in one
+rna_norm_test2$type <- ifelse(rna_norm_test2$Pvalue < 0.05 & rna_norm_test2$Log2FC < 0, 'Downregulated', 
+                             ifelse(rna_norm_test2$Pvalue < 0.05 & rna_norm_test2$Log2FC > 0, 'Upregulated', 'Not significant'))
+
+rna_norm_test2$colours <- ifelse(rna_norm_test2$type == 'Downregulated', 'steelblue', 
+                                ifelse(rna_norm_test2$type == 'Upregulated', 'tomato3', 'black'))
+
+title <- 'RNA expression FB vs iN'
+subtitle <- 'p-value < 0.05; Log2FC > 0'
+
+pdf("/Volumes/My Passport/hd_in/02.08.20_hd/plots/Fig1d.pdf")
+plot(log2(rna_norm_test2$`Mean IN`+0.5), 
+     log2(rna_norm_test2$`Mean FB`+0.5), 
+     col=rna_norm_test2$colours, 
+     cex=0.5, 
+     pch=16, 
+     xlab='log2(mean iN)', 
+     ylab='log2(mean FB)')
+mtext(line=1, adj=0.5, cex=1, font=2, title)
+mtext(line=0, adj=0.5, cex=0.8, subtitle)
+legend("bottomright", legend = c(paste("Up (",as.numeric(table(rna_norm_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("Down (",as.numeric(table(rna_norm_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("Not significant (",as.numeric(table(rna_norm_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+dev.off()
+
+svg("/Volumes/My Passport/hd_in/02.08.20_hd/plots/Fig1d.svg")
+plot(log2(rna_norm_test2$`Mean IN`+0.5), 
+     log2(rna_norm_test2$`Mean FB`+0.5), 
+     col=rna_norm_test2$colours, 
+     cex=0.5, 
+     pch=16, 
+     xlab='log2(mean iN)', 
+     ylab='log2(mean FB)')
+mtext(line=1, adj=0.5, cex=1, font=2, title)
+mtext(line=0, adj=0.5, cex=0.8, subtitle)
+legend("bottomright", legend = c(paste("Up (",as.numeric(table(rna_norm_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("Down (",as.numeric(table(rna_norm_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("Not significant (",as.numeric(table(rna_norm_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+dev.off()
+
+plot(log2(rna_norm_test2$`Mean IN`+0.5), 
+     log2(rna_norm_test2$`Mean FB`+0.5), 
+     col=rna_norm_test2$colours, 
+     cex=0.5, 
+     pch=16, 
+     xlab='log2(mean iN)', 
+     ylab='log2(mean FB)')
+mtext(line=1, adj=0.5, cex=1, font=2, title)
+mtext(line=0, adj=0.5, cex=0.8, subtitle)
+legend("bottomright", legend = c(paste("Up (",as.numeric(table(rna_norm_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("Down (",as.numeric(table(rna_norm_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("Not significant (",as.numeric(table(rna_norm_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+```
+
+We then write these results to excels (up/downregulated genes).
+``` {r rna_in_fb_write_excels, class.source = 'fold-hide', message=FALSE}
+# Significantly different
+rna_norm_test_sign <- subset(rna_norm_test2, rna_norm_test2$type != 'Not significant')
+
+# Up and down regulated for PANTHER
+rna_norm_test_upreg <- merge(rna_norm_test2[which(rna_norm_test2$type == 'Upregulated'),], unique(gene_transcript[,c("gene_id", "gene_name")]), by.x='row.names', by.y='gene_id')
+# write.table(rna_norm_test_upreg$gene_name, quote=F, col.names = F, row.names = F,
+#             file=paste(path, "GO_analysis/rna_upreg_fb.in.tab", sep=''))
+
+rna_norm_test_dwnreg <- merge(rna_norm_test2[which(rna_norm_test2$type == 'Downregulated'),], unique(gene_transcript[,c("gene_id", "gene_name")]), by.x='row.names', by.y='gene_id')
+# write.table(rna_norm_test_dwnreg$gene_name, quote=F, col.names = F, row.names = F,
+#             file=paste(path, 'GO_analysis/rna_dwnreg_fb.in.tab', sep=''))
+
+rna_norm_test2 <- merge(rna_norm_test2, unique(gene_transcript[,c('gene_id', 'gene_name')]), by.x='Gene id', by.y='gene_id')
+# write.table(rna_norm_test2$gene_name, quote=F, col.names = F, row.names = F,
+#             file=paste(path, 'GO_analysis/rna_expressed.tab', sep=''))
+
+to_file <- c("Gene", "Mean IN", "Mean FB", "Log2FC", "Shapiro Pvalue - IN",
+             "Shapiro Pvalue - FB", "T", "Pvalue", "Low conf int", "High conf int", "type")
+rna_norm_test_upreg_toxlsx <- rna_norm_test_upreg
+colnames(rna_norm_test_upreg_toxlsx) <- c("gene_id","Gene id","Mean IN","Mean FB",
+                                   "Log2FC","Shapiro Pvalue - IN",
+                                   "Shapiro Pvalue - FB","T","Pvalue","Low conf int","High conf int","type",
+                                   "colours","Gene")
+rna_norm_in_test_dwnreg_toxlsx <- rna_norm_test_dwnreg
+colnames(rna_norm_in_test_dwnreg_toxlsx) <- c("gene_id","Gene id","Mean IN","Mean FB",
+                                       "Log2FC","Shapiro Pvalue - IN",
+                                       "Shapiro Pvalue - FB","T","Pvalue","Low conf int","High conf int","type",
+                                       "colours","Gene")
+
+writexl::write_xlsx(x = rna_norm_in_test_dwnreg_toxlsx[,to_file], 
+           path = paste(path, "tables/STable1.xlsx", sep=''))
+
+writexl::write_xlsx(x = rna_norm_test_upreg_toxlsx[,to_file], 
+           path = paste(path, "tables/STable2.xlsx", sep=''))
+```
+
+
+Here is the head of the results of the upregulated genes in FB (RNAseq). 
+```{r rna_norm_test_upreg}
+head(rna_norm_test_upreg_toxlsx)[,to_file]
+```
+
+Here is the head of the results of the upregulated genes in iNs (RNAseq). 
+```{r rna_norm_test_dwnreg}
+head(rna_norm_in_test_dwnreg_toxlsx)[,to_file]
+```
+
+## RNA data - Fibroblasts HD vs control
+
+Now that we know how different iNs and fibroblasts are, we went ahead and tested for differences between conditions (HD vs control). Here we perform DEA with DESeq2 and produce a PCA plot.
+```{r rna_fb_hd_ctrl_pca, class.source = 'fold-hide'}
+coldata_fb <- subset(coldata, coldata$CellType == 'FB')
+# Filter out genes with less than 10 reads in one sample
+rna_expressed_fb <- rna[which(apply(rna[,coldata_fb$Column], 1, more_10) > 0), coldata_fb$Column]
+# DESeq DEA and normalizing with median of ratios
+dds_fb <- DESeqDataSetFromMatrix(rna_expressed_fb[,coldata_fb$Column], coldata_fb, design= ~Stage)
+dds_fb$Stage <- relevel(dds_fb$Stage, 'CTRL')
+dds_fb <- DESeq(dds_fb)
+res_fb <- results(dds_fb)
+vst_fb <- varianceStabilizingTransformation(dds_fb)
+plotPCA(vst_fb, intgroup="Stage")
+```
+
+Same as in the first section, we now test the difference of expression of each gene (row) in the normalized counts data frame between HD and control using unpaired t.tests. 
+
+### Here we do:
+- T-tests of fibroblats, HD vs control 
+- Mean plot
+```{r rna_fb_hd_ctrl_t.tests_mean_plot, class.source = 'fold-hide'}
+rna_norm_fb <- as.data.frame(counts(dds_fb, normalize=T))
+rna_norm_fb$gene_id <- rownames(rna_norm_fb)
+rna_norm_fb_test2 <- apply(rna_norm_fb, 1, FUN=t.test_row, coldata, "Stage", "CTRL", "HD")
+rna_norm_fb_test2 <- as.data.frame(t(rna_norm_fb_test2))
+rna_norm_fb_test2$`Gene id` <- as.character(rna_norm_fb_test2$`Gene id`)
+rna_norm_fb_test2$`Mean CTRL` <- as.numeric(as.character(rna_norm_fb_test2$`Mean CTRL`))
+rna_norm_fb_test2$`Mean HD` <- as.numeric(as.character(rna_norm_fb_test2$`Mean HD`))
+rna_norm_fb_test2$`Log2FC` <- as.numeric(as.character(rna_norm_fb_test2$`Log2FC`))
+rna_norm_fb_test2$`Shapiro Pvalue - HD` <- as.numeric(as.character(rna_norm_fb_test2$`Shapiro Pvalue - HD`))
+rna_norm_fb_test2$`Shapiro Pvalue - CTRL` <- as.numeric(as.character(rna_norm_fb_test2$`Shapiro Pvalue - CTRL`))
+rna_norm_fb_test2$T <- as.numeric(as.character(rna_norm_fb_test2$T))
+rna_norm_fb_test2$Pvalue <- as.numeric(as.character(rna_norm_fb_test2$Pvalue))
+rna_norm_fb_test2$`Low conf int` <- as.numeric(as.character(rna_norm_fb_test2$`Low conf int`))
+rna_norm_fb_test2$`High conf int` <- as.numeric(as.character(rna_norm_fb_test2$`High conf int`))
+# Filter out genes that are not normally distributed
+# rna_norm_fb_test2 <- rna_norm_fb_test2[which(rna_norm_fb_test2$`Shapiro Pvalue - HD` > 0.05 & rna_norm_fb_test2$`Shapiro Pvalue - Control` > 0.05),]
+rna_norm_fb_test2 <- rna_norm_fb_test2[which(rna_norm_fb_test2$`Shapiro Pvalue - HD` > 0.05 & rna_norm_fb_test2$`Shapiro Pvalue - CTRL` > 0.05),]
+# Get the counts of the ones that are normally distributed
+rna_norm_fb <- subset(rna_norm_fb, rna_norm_fb$gene_id %in% rna_norm_fb_test2$`Gene id`)
+# Which one of those is significantly different?
+rna_signdiff_fb <- rna_norm_fb_test2[which(rna_norm_fb_test2$Pvalue < 0.05),]
+# Tag them in one
+rna_norm_fb_test2$type <- ifelse(rna_norm_fb_test2$Pvalue < 0.05 & rna_norm_fb_test2$Log2FC < 0, 'Downregulated', 
+                                ifelse(rna_norm_fb_test2$Pvalue < 0.05 & rna_norm_fb_test2$Log2FC > 0, 'Upregulated', 'Not significant'))
+# table(rna_norm_fb_test2$type)
+# Put them colorrsss
+rna_norm_fb_test2$colours <- ifelse(rna_norm_fb_test2$type == 'Downregulated', 'steelblue', 
+                                   ifelse(rna_norm_fb_test2$type == 'Upregulated', 'tomato3', 'black'))
+# Size of the points for the mean plot
+rna_norm_fb_test2$cexs <- ifelse(rownames(rna_norm_fb_test2) %in% rownames(rna_signdiff_fb) , 1, 0.5)
+plot(log2(rna_norm_fb_test2$`Mean CTRL`+0.5), 
+     log2(rna_norm_fb_test2$`Mean HD`+0.5), 
+     col=rna_norm_fb_test2$colours, 
+     cex=rna_norm_fb_test2$cexs, 
+     pch=16, 
+     xlab='log2(mean Control)', 
+     ylab='log2(mean HD)',
+     main='RNA FB - HD vs Control (p-value < 0.05; |log2FC| > 0)')
+legend("bottomright", legend = c(paste("up (",as.numeric(table(rna_norm_fb_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("down (",as.numeric(table(rna_norm_fb_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("not significant (",as.numeric(table(rna_norm_fb_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+```
+
+Now we write the up/downregulated genes to excel files
+```{r rna_fb_hd_ctrl_write_excels, class.source = 'fold-hide', message=FALSE}
+# Significantly different 
+rna_norm_fb_test2_signdiff <- subset(rna_norm_fb_test2, rna_norm_fb_test2$type != 'Not significant')
+# Up and down regulated for PANTHER
+rna_norm_fb_test2_upreg <- merge(rna_norm_fb_test2_signdiff[which(rna_norm_fb_test2_signdiff$type == 'Upregulated'),], unique(gene_transcript[,c(2,3)]), by.x='row.names', by.y='gene_id')
+# write.table(rna_norm_fb_test2_upreg$Gene, quote=F, col.names = F, row.names = F,
+#             file=paste(path, 'GO_analysis/fb_rna_hd.ctrl_upreg.tab', sep=''))
+rna_norm_fb_test2_dwnreg <- merge(rna_norm_fb_test2_signdiff[which(rna_norm_fb_test2_signdiff$type == 'Downregulated'),], unique(gene_transcript[,c(2,3)]), by.x='row.names', by.y='gene_id')
+# write.table(rna_norm_fb_test2_dwnreg$Gene, quote=F, col.names = F, row.names = F,
+#             file=paste(path, 'GO_analysis/fb_rna_hd.ctrl_dwnreg.tab', sep=''))
+rna_norm_fb_test2 <- merge(rna_norm_fb_test2, unique(gene_transcript[,c('gene_id', 'gene_name')]), by.x='Gene id', by.y='gene_id')
+# write.table(rna_norm_fb_test2$gene_name, quote=F, col.names = F, row.names = F,
+#             file=paste(path, 'GO_analysis/fb_rna_hd.ctrl.tab', sep=''))
+```
+
+## RNA data - iNs HD vs control
+
+Here we produce the PCA plot and normalized counts for iNs (highlighting HD vs control in PCA).
+```{r rna_in_hd_ctrl_pca, class.source = 'fold-hide'}
+coldata_in <- subset(coldata, coldata$CellType == 'IN')
+# DESeq DEA and normalizing with median of ratios
+dds_in <- DESeqDataSetFromMatrix(rna[,coldata_in$Column], coldata_in, design= ~Stage)
+dds_in$Stage <- relevel(dds_in$Stage, 'CTRL')
+dds_in <- DESeq(dds_in)
+res_in <- results(dds_in)
+vst_in <- varianceStabilizingTransformation(dds_in)
+plotPCA(vst_in, intgroup="Stage")
+```
+
+Here is a heatmap of authophagy related genes.
+```{r rna_in_hd_ctrl_autophagy_heatmaps}
+rna_norm_in <- as.data.frame(counts(dds_in, normalize=T))
+rna_norm_in$gene_id <- rownames(rna_norm_in)
+autophagy <- fread('/Volumes/My Passport/hd_in/autophagy_gene_list.txt', header = F, data.table = F)$V1
+autophagy_rna_norm_in_control <- merge(rna_norm_in, unique(gene_transcript[,c(2,3)]), by='gene_id')
+autophagy_rna_norm_in_control <- autophagy_rna_norm_in_control[which(autophagy_rna_norm_in_control$gene_name %in% autophagy), ]
+rownames(autophagy_rna_norm_in_control) <- make.unique(autophagy_rna_norm_in_control$gene_name)
+colnames(autophagy_rna_norm_in_control)[which(colnames(autophagy_rna_norm_in_control) %in% coldata$Sample)] <- coldata[colnames(autophagy_rna_norm_in_control)[which(colnames(autophagy_rna_norm_in_control) %in% coldata$Sample)], "RealName"]
+autophagy_rna_norm_in_control_colannot <- coldata[which(coldata$CellType == 'IN' & coldata$Stage == "CTRL"), c("AgeContinuous", "RealName", "Column"), drop=F]
+rownames(autophagy_rna_norm_in_control_colannot) <- autophagy_rna_norm_in_control_colannot$Column
+autophagy_rna_norm_in_control <- autophagy_rna_norm_in_control[,subset(coldata, coldata$CellType == 'IN' & coldata$Stage == "CTRL")$Column]
+pheatmap(log2(autophagy_rna_norm_in_control[which(rowSums(autophagy_rna_norm_in_control) > 0),]+0.5), 
+         scale='row', 
+         annotation_col = autophagy_rna_norm_in_control_colannot[,"AgeContinuous", drop=F],
+         fontsize = 7)
+```
+
+Now we test using iN's normalized counts per gene/row between HD and control.
+
+### Here we do:
+- T-tests of iNs, HD vs control 
+- Mean plot
+```{r rna_in_hd_ctrl_t.tests_mean_plot, class.source = 'fold-hide'}
+rna_norm_in_test2 <- apply(rna_norm_in, 1, FUN=t.test_row, coldata, "Stage", "CTRL", "HD")
+rna_norm_in_test2 <- as.data.frame(t(rna_norm_in_test2))
+rna_norm_in_test2$`Gene id` <- as.character(rna_norm_in_test2$`Gene id`)
+rna_norm_in_test2$`Mean CTRL` <- as.numeric(as.character(rna_norm_in_test2$`Mean CTRL`))
+rna_norm_in_test2$`Mean HD` <- as.numeric(as.character(rna_norm_in_test2$`Mean HD`))
+rna_norm_in_test2$`Log2FC` <- as.numeric(as.character(rna_norm_in_test2$`Log2FC`))
+rna_norm_in_test2$`Shapiro Pvalue - HD` <- as.numeric(as.character(rna_norm_in_test2$`Shapiro Pvalue - HD`))
+rna_norm_in_test2$`Shapiro Pvalue - CTRL` <- as.numeric(as.character(rna_norm_in_test2$`Shapiro Pvalue - CTRL`))
+rna_norm_in_test2$T <- as.numeric(as.character(rna_norm_in_test2$T))
+rna_norm_in_test2$Pvalue <- as.numeric(as.character(rna_norm_in_test2$Pvalue))
+rna_norm_in_test2$`Low conf int` <- as.numeric(as.character(rna_norm_in_test2$`Low conf int`))
+rna_norm_in_test2$`High conf int` <- as.numeric(as.character(rna_norm_in_test2$`High conf int`))
+# Filter out genes that are not normally distributed
+rna_norm_in_test2 <- rna_norm_in_test2[which(rna_norm_in_test2$`Shapiro Pvalue - HD` > 0.05 & rna_norm_in_test2$`Shapiro Pvalue - CTRL` > 0.05),]
+# Get the counts of the ones that are normally distributed
+rna_norm_in <- subset(rna_norm_in, rna_norm_in$gene_id %in% rna_norm_in_test2$`Gene id`)
+# Calculate the log2(mean per condition + 0.5)
+# Which one of those is significantly different?
+# Tag them in one
+rna_norm_in_test2$type <- ifelse(rna_norm_in_test2$Pvalue < 0.05 & rna_norm_in_test2$Log2FC < 0, 'Downregulated', 
+                                ifelse(rna_norm_in_test2$Pvalue < 0.05 & rna_norm_in_test2$Log2FC > 0, 'Upregulated', 'Not significant'))
+rna_norm_in_test2$colours <- ifelse(rna_norm_in_test2$type == 'Downregulated', 'steelblue', 
+                                   ifelse(rna_norm_in_test2$type == 'Upregulated', 'tomato3', 'black'))
+# Size of the points for the mean plot
+title <- "iN RNA expression HD/Control"
+subtitle <- "p-value < 0.05; Log2FC > 0"
+rna_norm_in_test2$cexs <- ifelse(rna_norm_in_test2$Pvalue < 0.05 , 1, 0.5)
+pdf("/Volumes/My Passport/hd_in/02.08.20_hd/plots/Fig2b.pdf")
+plot(log2(rna_norm_in_test2$`Mean CTRL` + 0.5), 
+     log2(rna_norm_in_test2$`Mean HD` + 0.5), 
+     col=rna_norm_in_test2$colours, 
+     cex=rna_norm_in_test2$cexs, 
+     pch=16, 
+     xlab='log2(mean Control)', 
+     ylab='log2(mean HD)')
+mtext(line=1, adj=0.5, cex=1, font=2, title)
+mtext(line=0, adj=0.5, cex=0.8, subtitle)
+legend("bottomright", legend = c(paste("Up (",as.numeric(table(rna_norm_in_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("Down (",as.numeric(table(rna_norm_in_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("Not significant (",as.numeric(table(rna_norm_in_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+dev.off()
+svg("/Volumes/My Passport/hd_in/02.08.20_hd/plots/Fig2b.svg")
+plot(log2(rna_norm_in_test2$`Mean CTRL` + 0.5), 
+     log2(rna_norm_in_test2$`Mean HD` + 0.5), 
+     col=rna_norm_in_test2$colours, 
+     cex=rna_norm_in_test2$cexs, 
+     pch=16, 
+     xlab='log2(mean Control)', 
+     ylab='log2(mean HD)')
+mtext(line=1, adj=0.5, cex=1, font=2, title)
+mtext(line=0, adj=0.5, cex=0.8, subtitle)
+legend("bottomright", legend = c(paste("Up (",as.numeric(table(rna_norm_in_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("Down (",as.numeric(table(rna_norm_in_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("Not significant (",as.numeric(table(rna_norm_in_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+dev.off()
+plot(log2(rna_norm_in_test2$`Mean CTRL` + 0.5), 
+     log2(rna_norm_in_test2$`Mean HD` + 0.5), 
+     col=rna_norm_in_test2$colours, 
+     cex=rna_norm_in_test2$cexs, 
+     pch=16, 
+     xlab='log2(mean Control)', 
+     ylab='log2(mean HD)')
+mtext(line=1, adj=0.5, cex=1, font=2, title)
+mtext(line=0, adj=0.5, cex=0.8, subtitle)
+legend("bottomright", legend = c(paste("Up (",as.numeric(table(rna_norm_in_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("Down (",as.numeric(table(rna_norm_in_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("Not significant (",as.numeric(table(rna_norm_in_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+```
+
+Write to excels up/downregulated genes.
+```{r rna_in_hd_ctrl_write_excels, class.source = 'fold-hide', message=FALSE}
+# Significantly different 
+rna_norm_in_test2_sign <- subset(rna_norm_in_test2, rna_norm_in_test2$type != 'Not significant')
+# Up and down regulated for PANTHER
+rna_norm_in_test2_upreg <- merge(rna_norm_in_test2[which(rna_norm_in_test2$type == 'Upregulated'),], unique(gene_transcript[,c(2,3)]), by.x='row.names', by.y='gene_id')
+rna_norm_in_test2_dwnreg <- merge(rna_norm_in_test2[which(rna_norm_in_test2$type == 'Downregulated'),], unique(gene_transcript[,c(2,3)]), by.x='row.names', by.y='gene_id')
+rna_norm_in_test2 <- merge(rna_norm_in_test2, unique(gene_transcript[,c('gene_id', 'gene_name')]), by.x='Gene id', by.y='gene_id')
+to_file <- c("Gene", "Mean CTRL", "Mean HD", "Log2FC", "Shapiro Pvalue - CTRL", "Shapiro Pvalue - HD", "T", "Pvalue", "Low conf int", "High conf int", "type")
+colnames(rna_norm_in_test2_upreg)[ncol(rna_norm_in_test2_upreg)] <- "Gene"
+colnames(rna_norm_in_test2_dwnreg)[ncol(rna_norm_in_test2_dwnreg)] <- "Gene"
+
+writexl::write_xlsx(x = rna_norm_in_test2_upreg[,to_file], 
+           path = paste(path, "tables/STable5.xlsx", sep=''))
+write.table(x = rna_norm_in_test2_upreg$Gene, 
+            file = paste(path, "GO_analysis/in_rna_hd.ctrl_upreg.tab", sep=''), quote = F, row.names = F, col.names = F)
+
+writexl::write_xlsx(x = rna_norm_in_test2_dwnreg[,to_file], 
+           path = paste(path, "tables/STable6.xlsx", sep=''))
+write.table(rna_norm_in_test2_dwnreg$Gene, 
+           file = paste(path, "GO_analysis/in_rna_hd.ctrl_dwnreg.tab", sep=''), quote = F, row.names = F, col.names = F)
+
+write.table(rna_norm_in_test2$gene_name, 
+           file = paste(path, "GO_analysis/in_rna_hd.ctrl_expressed.tab", sep=''), quote = F, row.names = F, col.names = F)
+```
+
+Here is the head of the results of the upregulated genes in HD (iNs RNAseq). 
+```{r rna_norm_in_test2_upreg}
+head(rna_norm_in_test2_upreg)[,to_file]
+```
+And here is the head of the results of the downregulated genes in HD (iNs RNAseq). 
+```{r rna_norm_in_test2_dwnreg}
+head(rna_norm_in_test2_dwnreg)[,to_file]
+```
+
+## Protein data - iNs vs fibroblasts
+
+Having checked the transcriptional changes between iNs and fibrooblasts, and the differences among the groups between HD and control, we now move on to check if the same differences are observed in the proteomics data.
+
+### Here we do:
+- T-tests of iNs vs fibroblasts in proteomics
+- Mean plot
+```{r protein_in_fb_t.tests_mean_plot, class.source = 'fold-hide'}
+protein <- fread('/Volumes/My Passport/hd_in/09.19_hd/5_proteomics/20200309_HDProteomics_Log2_SubtractMedianColumn_AverageSample_+20.txt', data.table=F)
+samples_in_RNA <- colnames(protein)[which(colnames(protein) %in% coldata[which(coldata$Column %in% colnames(rna)[which(colnames(rna) %in% coldata$Column)]), "Sample"])]
+protein <- protein[,c('Gene', samples_in_RNA)]
+colnames(protein)[1] <- "gene_id"
+protein$gene_unique <- make.unique(protein$gene_id)
+colnames(protein)
+#
+protein_fb <- protein[, c(colnames(protein)[which(colnames(protein) %in% subset(coldata, coldata$CellType == 'FB')$Sample)], 'gene_id', 'gene_unique')]
+protein_in <- protein[, c(colnames(protein)[which(colnames(protein) %in% subset(coldata, coldata$CellType == 'IN')$Sample)], 'gene_id', 'gene_unique')]
+protein_in[is.na(protein_in)] <- 0
+protein_fb[is.na(protein_fb)] <- 0
+protein[is.na(protein)] <- 0
+coldata$Column <- coldata$Sample
+rownames(coldata) <- coldata$Column
+rownames(protein) <- protein$gene_unique
+protein_test2 <- apply(protein, 1, FUN=t.test_row, coldata, "CellType", "IN", "FB")
+protein_test2 <- as.data.frame(t(protein_test2))
+protein_test2$`Gene id` <- as.character(protein_test2$`Gene id`)
+protein_test2$`Mean IN` <- as.numeric(as.character(protein_test2$`Mean IN`))
+protein_test2$`Mean FB` <- as.numeric(as.character(protein_test2$`Mean FB`))
+protein_test2$`Log2FC` <- as.numeric(as.character(protein_test2$`Log2FC`))
+protein_test2$`Shapiro Pvalue - IN` <- as.numeric(as.character(protein_test2$`Shapiro Pvalue - IN`))
+protein_test2$`Shapiro Pvalue - FB` <- as.numeric(as.character(protein_test2$`Shapiro Pvalue - FB`))
+protein_test2$T <- as.numeric(as.character(protein_test2$T))
+protein_test2$Pvalue <- as.numeric(as.character(protein_test2$Pvalue))
+protein_test2$`Low conf int` <- as.numeric(as.character(protein_test2$`Low conf int`))
+protein_test2$`High conf int` <- as.numeric(as.character(protein_test2$`High conf int`))
+# Filter out genes that are not normally distributed
+protein_test2 <- protein_test2[which(protein_test2$`Shapiro Pvalue - IN` > 0.05 & protein_test2$`Shapiro Pvalue - FB` > 0.05),]
+# Get the counts of the ones that are normally distributed
+# protein <- subset(protein, protein$gene_name %in% protein_test2$`Gene name`)
+# Which one of those is significantly different?
+protein_signdiff <- protein_test2[which(protein_test2$Pvalue < 0.05),]
+# Tag them in one
+protein_test2$type <- ifelse(protein_test2$Pvalue < 0.05 & protein_test2$Log2FC < 0, 'Downregulated', 
+                            ifelse(protein_test2$Pvalue < 0.05 & protein_test2$Log2FC > 0, 'Upregulated', 'Not significant'))
+# Put them colorrsss
+protein_test2$colours <- ifelse(protein_test2$type == 'Downregulated', 'steelblue', 
+                               ifelse(protein_test2$type == 'Upregulated', 'tomato3', 'black'))
+
+# Size of the points for the mean plot
+protein_test2$cexs <- ifelse(rownames(protein_test2) %in% rownames(protein_signdiff) , 1, 0.5)
+title <- "Protein abundance FB vs iN"
+subtitle <- "p-value < 0.05; Log2FC > 0"
+
+pdf("/Volumes/My Passport/hd_in/02.08.20_hd/plots/Fig1h.pdf")
+plot(log2(protein_test2$`Mean IN`+0.5), 
+     log2(protein_test2$`Mean FB`+0.5), 
+     col=protein_test2$colours, 
+     cex=0.5, 
+     pch=16, 
+     xlab='log2(mean iN)', 
+     ylab='log2(mean FB)')
+mtext(line=1, adj=0.5, cex=1, font=2, title)
+mtext(line=0, adj=0.5, cex=0.8, subtitle)
+legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("down (",as.numeric(table(protein_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("not significant (",as.numeric(table(protein_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+dev.off()
+svg("/Volumes/My Passport/hd_in/02.08.20_hd/plots/Fig1h.svg")
+plot(log2(protein_test2$`Mean IN`+0.5), 
+     log2(protein_test2$`Mean FB`+0.5), 
+     col=protein_test2$colours, 
+     cex=0.5, 
+     pch=16, 
+     xlab='log2(mean iN)', 
+     ylab='log2(mean FB)')
+mtext(line=1, adj=0.5, cex=1, font=2, title)
+mtext(line=0, adj=0.5, cex=0.8, subtitle)
+legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("down (",as.numeric(table(protein_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("not significant (",as.numeric(table(protein_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+dev.off()
+
+plot(log2(protein_test2$`Mean IN`+0.5), 
+     log2(protein_test2$`Mean FB`+0.5), 
+     col=protein_test2$colours, 
+     cex=0.5, 
+     pch=16, 
+     xlab='log2(mean iN)', 
+     ylab='log2(mean FB)')
+mtext(line=1, adj=0.5, cex=1, font=2, title)
+mtext(line=0, adj=0.5, cex=0.8, subtitle)
+legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("down (",as.numeric(table(protein_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("not significant (",as.numeric(table(protein_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+
+```
+
+Write o excels up/downregulated proteins.
+```{r protein_in_fb_write_excels, class.source = 'fold-hide', message=FALSE}
+# Significantly different 
+protein_test_sign <- subset(protein_test2, protein_test2$type != 'Not significant')
+
+protein_test_upreg <- protein_test2[which(protein_test2$type == 'Upregulated'),]
+protein_test_dwnreg <- protein_test2[which(protein_test2$type == 'Downregulated'),]
+
+to_file <- c("Gene id", "Mean IN", "Mean FB", "Log2FC", "Shapiro Pvalue - IN",
+             "Shapiro Pvalue - FB", "T", "Pvalue", "Low conf int", "High conf int", "type")
+protein_test_upreg_toxlsx <- protein_test_upreg
+protein_test_dwnreg_toxlsx <- protein_test_dwnreg
+
+writexl::write_xlsx(x = protein_test_upreg_toxlsx[,to_file], 
+           path = paste(path, "tables/STable3.xlsx", sep=''))
+
+writexl::write_xlsx(x = protein_test_dwnreg_toxlsx[,to_file], 
+           path = paste(path, "tables/STable4.xlsx", sep=''))
+
+```
+Here is the head of the results of the upregulated proteins in FB (Proteomics). 
+```{r protein_test_upreg}
+head(protein_test_upreg_toxlsx)[,to_file]
+```
+Here is the head of the results of the upregulated proteins in iNs (Proteomics). 
+```{r protein_test_dwnreg_toxlsx}
+head(protein_test_dwnreg_toxlsx)[,to_file]
+```
+
+## Protein data - Fibroblasts HD vs control
+
+Similarly, now we test the differences between HD and control among the fibroblasts samples.
+
+### Here we do:
+- T-tests of fibroblasts, HD vs control 
+- Mean plot
+```{r protein_fb_hd_ctrl_t.tests_mean_plot, class.source = 'fold-hide'}
+protein_fb_test2 <- apply(protein_fb, 1, FUN=t.test_row, coldata, "Stage", "CTRL", "HD")
+protein_fb_test2 <- as.data.frame(t(protein_fb_test2))
+protein_fb_test2$`Gene id` <- as.character(protein_fb_test2$`Gene id`)
+protein_fb_test2$`Mean HD` <- as.numeric(as.character(protein_fb_test2$`Mean HD`))
+protein_fb_test2$`Mean CTRL` <- as.numeric(as.character(protein_fb_test2$`Mean CTRL`))
+protein_fb_test2$`Log2FC` <- as.numeric(as.character(protein_fb_test2$`Log2FC`))
+protein_fb_test2$`Shapiro Pvalue - HD` <- as.numeric(as.character(protein_fb_test2$`Shapiro Pvalue - HD`))
+protein_fb_test2$`Shapiro Pvalue - CTRL` <- as.numeric(as.character(protein_fb_test2$`Shapiro Pvalue - CTRL`))
+protein_fb_test2$T <- as.numeric(as.character(protein_fb_test2$T))
+protein_fb_test2$Pvalue <- as.numeric(as.character(protein_fb_test2$Pvalue))
+protein_fb_test2$`Low conf int` <- as.numeric(as.character(protein_fb_test2$`Low conf int`))
+protein_fb_test2$`High conf int` <- as.numeric(as.character(protein_fb_test2$`High conf int`))
+# Filter out genes that are not normally distributed
+protein_fb_test2 <- protein_fb_test2[which(protein_fb_test2$`Shapiro Pvalue - HD` > 0.05 & protein_fb_test2$`Shapiro Pvalue - CTRL` > 0.05),]
+
+# Which one of those is significantly different?
+# Tag them in one
+protein_fb_test2$type <- ifelse(protein_fb_test2$Pvalue < 0.05 & protein_fb_test2$Log2FC < 0, 'Downregulated', 
+                               ifelse(protein_fb_test2$Pvalue < 0.05 & protein_fb_test2$Log2FC > 0, 'Upregulated', 'Not significant'))
+
+# Put them colorrsss
+protein_fb_test2$colours <- ifelse(protein_fb_test2$type == 'Downregulated', 'steelblue', 
+                                  ifelse(protein_fb_test2$type == 'Upregulated', 'tomato3', 'black'))
+
+# Size of the points for the mean plot
+protein_fb_test2$cexs <- ifelse(protein_fb_test2$Pvalue < 0.05 , 1, 0.5)
+
+protein_fb_test2$`log2 Mean CTRL` <- log2(protein_fb_test2$`Mean CTRL` + 0.5) 
+protein_fb_test2$`log2 Mean HD` <- log2(protein_fb_test2$`Mean HD` + 0.5)
+
+plot(protein_fb_test2$`log2 Mean CTRL`, 
+     protein_fb_test2$`log2 Mean HD`, 
+     col=protein_fb_test2$colours, 
+     cex=protein_fb_test2$cexs, 
+     pch=16, 
+     xlab='log2(mean Control)', 
+     ylab='log2(mean HD)',
+     main='Protein FB - HD vs Control (p-value < 0.05; |log2FC| > 0)')
+
+legend("bottomright", legend = c(paste("up (",as.numeric(table(protein_fb_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("down (",as.numeric(table(protein_fb_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("not significant (",as.numeric(table(protein_fb_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+
+```
+
+Write to excels up/downregulated proteins
+```{r protein_fb_hd_ctrl_write_excels, class.source = 'fold-hide', message=FALSE}
+# # Significantly different 
+# # Means
+protein_fb_test_signdiff <- subset(protein_fb_test2, protein_fb_test2$type != 'Not significant')
+# Up and down regulated for PANTHER
+protein_fb_test_upreg <- protein_fb_test_signdiff[which(protein_fb_test_signdiff$type == 'Upregulated'),]
+protein_fb_test_upreg <- merge(protein[,c('gene_id', 'gene_unique')], protein_fb_test_upreg, by.y='Gene id', by.x='gene_id')
+# write.table(protein_fb_test_upreg$gene_id, quote=F, col.names = F, row.names = F,
+#             file=paste(path, 'GO_analysis/fb_protein_hd.ctrl_upreg.tab', sep=''))
+
+protein_fb_test_dwnreg <- protein_fb_test_signdiff[which(protein_fb_test_signdiff$type == 'Downregulated'),]
+protein_fb_test_dwnreg <- merge(protein[,c('gene_id', 'gene_unique')], protein_fb_test_dwnreg, by.y='Gene id', by.x='gene_unique')
+# write.table(protein_fb_test_dwnreg$gene_id, quote=F, col.names = F, row.names = F,
+#             file=paste(path, 'GO_analysis/fb_protein_hd.ctrl_dwnreg.tab', sep=''))
+# 
+# write.table(protein_fb_test2$`Gene id`, quote=F, col.names = F, row.names = F,
+#             file=paste(path, 'GO_analysis/fb_protein_hd.ctrl_expressed.tab', sep=''))
+# 
+# write.xlsx(protein_fb_test_signdiff[,-c((ncol(protein_fb_test_signdiff)-3):ncol(protein_fb_test_signdiff))],
+#            file=paste(getwd(), '/5_proteomics/GO_analysis/fb_protein_hd.ctrl_signdiff.xlsx', sep=''), row.names = F)
+
+
+```
+
+## Protein data - iNs HD vs Control
+
+Here is a heatmap of authophagy related proteins.
+```{r protein_in_hd_ctrl_autophagy_heatmaps, class.source = 'fold-hide'}
+autophagy_protein_in_control <- protein_in[which(protein_in$gene_id %in% autophagy), ]
+rownames(autophagy_protein_in_control) <- autophagy_protein_in_control$gene_unique
+autophagy_protein_in_control <- autophagy_protein_in_control[,subset(coldata, coldata$CellType == 'IN' & coldata$Stage == "CTRL")$Sample]
+autophagy_protein_in_control_colannot <- coldata[which(coldata$CellType == 'IN' & coldata$Stage == "CTRL"), c("AgeContinuous", "RealName"), drop=F]
+rownames(autophagy_protein_in_control_colannot) <- autophagy_protein_in_control_colannot$RealName
+
+colnames(autophagy_protein_in_control) <- coldata[colnames(autophagy_protein_in_control), "RealName"]
+
+pheatmap(autophagy_protein_in_control, 
+         scale='row', 
+         annotation_col = autophagy_protein_in_control_colannot[,"AgeContinuous", drop=F], cluster_rows = T,
+         fontsize = 7)
+```
+
+We now test for differences between HD and control among the iN samples
+- T-tests of iNs, HD vs control 
+- Mean plot
+```{r protein_in_hd_ctrl_t.tests_mean_plot, class.source = 'fold-hide'}
+# Protein iN ----
+protein_in_test2 <- apply(protein_in, 1, FUN=t.test_row, coldata, "Stage", "CTRL", "HD")
+protein_in_test2 <- as.data.frame(t(protein_in_test2))
+protein_in_test2$`Gene id` <- as.character(protein_in_test2$`Gene id`)
+protein_in_test2$`Mean HD` <- as.numeric(as.character(protein_in_test2$`Mean HD`))
+protein_in_test2$`Mean CTRL` <- as.numeric(as.character(protein_in_test2$`Mean CTRL`))
+protein_in_test2$`Log2FC` <- as.numeric(as.character(protein_in_test2$`Log2FC`))
+protein_in_test2$`Shapiro Pvalue - HD` <- as.numeric(as.character(protein_in_test2$`Shapiro Pvalue - HD`))
+protein_in_test2$`Shapiro Pvalue - CTRL` <- as.numeric(as.character(protein_in_test2$`Shapiro Pvalue - CTRL`))
+protein_in_test2$T <- as.numeric(as.character(protein_in_test2$T))
+protein_in_test2$Pvalue <- as.numeric(as.character(protein_in_test2$Pvalue))
+protein_in_test2$`Low conf int` <- as.numeric(as.character(protein_in_test2$`Low conf int`))
+protein_in_test2$`High conf int` <- as.numeric(as.character(protein_in_test2$`High conf int`))
+
+# Filter out genes that are not normally distributed
+protein_in_test2 <- protein_in_test2[which(protein_in_test2$`Shapiro Pvalue - HD` > 0.05 & protein_in_test2$`Shapiro Pvalue - CTRL` > 0.05),]
+
+# Which one of those is significantly different?
+protein_signdiff_in <- protein_in_test2[which(protein_in_test2$Pvalue < 0.05 ),]
+
+# Tag them in one
+protein_in_test2$type <- ifelse(protein_in_test2$Pvalue < 0.05 & protein_in_test2$Log2FC < 0, 'Downregulated', 
+                               ifelse(protein_in_test2$Pvalue < 0.05 & protein_in_test2$Log2FC > 0, 'Upregulated', 'Not significant'))
+
+# Put them colorrsss
+protein_in_test2$colours <- ifelse(protein_in_test2$type == 'Downregulated', 'steelblue', 
+                                  ifelse(protein_in_test2$type == 'Upregulated', 'tomato3', 'black'))
+
+# Size of the points for the mean plot
+protein_in_test2$cexs <- ifelse(protein_in_test2$type != "Not significant" , 1, 0.5)
+
+title <- "Protein iN - HD vs Control"
+subtitle <- "p-value < 0.05; Log2FC > 0"
+pdf("/Volumes/My Passport/hd_in/02.08.20_hd/plots/Fig2c.pdf")
+plot(log2(protein_in_test2$`Mean CTRL`), 
+     log2(protein_in_test2$`Mean HD`), 
+     col=protein_in_test2$colours, 
+     cex=protein_in_test2$cexs, 
+     pch=16, 
+     xlab='log2(mean Control)', 
+     ylab='log2(mean HD)',
+    ylim=c(3.7, 5), xlim=c(3.8, 5))#, ylim=c(14,30), xlim=c(14,30))
+mtext(line=1, adj=0.5, cex=1, font=2, title)
+mtext(line=0, adj=0.5, cex=0.8, subtitle)
+legend("bottomright", legend = c(paste("Up (",as.numeric(table(protein_in_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("Down (",as.numeric(table(protein_in_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("Not significant (",as.numeric(table(protein_in_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+dev.off()
+
+svg("/Volumes/My Passport/hd_in/02.08.20_hd/plots/Fig2c.svg")
+plot(log2(protein_in_test2$`Mean CTRL`), 
+     log2(protein_in_test2$`Mean HD`), 
+     col=protein_in_test2$colours, 
+     cex=protein_in_test2$cexs, 
+     pch=16, 
+     xlab='log2(mean Control)', 
+     ylab='log2(mean HD)',
+    ylim=c(3.7, 5), xlim=c(3.8, 5))#, ylim=c(14,30), xlim=c(14,30))
+mtext(line=1, adj=0.5, cex=1, font=2, title)
+mtext(line=0, adj=0.5, cex=0.8, subtitle)
+legend("bottomright", legend = c(paste("Up (",as.numeric(table(protein_in_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("Down (",as.numeric(table(protein_in_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("Not significant (",as.numeric(table(protein_in_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+dev.off()
+
+plot(log2(protein_in_test2$`Mean CTRL`), 
+     log2(protein_in_test2$`Mean HD`), 
+     col=protein_in_test2$colours, 
+     cex=protein_in_test2$cexs, 
+     pch=16, 
+     xlab='log2(mean Control)', 
+     ylab='log2(mean HD)',
+    ylim=c(3.7, 5), xlim=c(3.8, 5))#, ylim=c(14,30), xlim=c(14,30))
+mtext(line=1, adj=0.5, cex=1, font=2, title)
+mtext(line=0, adj=0.5, cex=0.8, subtitle)
+legend("bottomright", legend = c(paste("Up (",as.numeric(table(protein_in_test2$type)["Upregulated"]),")",sep=""),
+                                 paste("Down (",as.numeric(table(protein_in_test2$type)["Downregulated"]),")",sep = ""),
+                                 paste("Not significant (",as.numeric(table(protein_in_test2$type)["Not significant"]),")",sep = "")),
+       pch=16,col=c("firebrick3","steelblue4","black"),cex=1)
+
+```
+
+Write to excels up/downregulated proteins
+```{r protein_in_hd_ctrl_write_excels, class.source = 'fold-hide', message=FALSE}
+protein_in_test_upreg <- protein_in_test2[which(protein_in_test2$type == 'Upregulated'),]
+protein_in_test_upreg <- merge(protein[,c('gene_id', 'gene_unique')], protein_in_test_upreg, by.y='Gene id', by.x='gene_unique')
+
+protein_in_test_dwnreg <- protein_in_test2[which(protein_in_test2$type == 'Downregulated'),]
+protein_in_test_dwnreg <- merge(protein[,c('gene_id', 'gene_unique')], protein_in_test_dwnreg, by.y='Gene id', by.x='gene_unique')
+
+protein_in_test2 <- merge(protein[,c('gene_id', 'gene_unique')], protein_in_test2, by.y='Gene id', by.x='gene_unique')
+
+colnames(protein_in_test_upreg)[2] <- "Gene id"
+colnames(protein_in_test_dwnreg)[2] <- "Gene id"
+
+to_file <- c("Gene id", "Mean CTRL", "Mean HD", "Log2FC", "Shapiro Pvalue - CTRL", "Shapiro Pvalue - HD", "T", "Pvalue", "Low conf int", "High conf int", "type")
+writexl::write_xlsx(x = protein_in_test_upreg[,to_file], 
+           path = paste(path, "tables/STable9.xlsx", sep=''))
+
+writexl::write_xlsx(x = protein_in_test_dwnreg[,to_file], 
+           path = paste(path, "tables/STable10.xlsx", sep=''))
+```
+Here is the head of the results of the upregulated proteins in HD (iN Proteomics). 
+```{r protein_in_test_upreg}
+head(protein_in_test_upreg)[,to_file]
+```
+Here is the head of the results of the downregulated proteins in HD (iN Proteomics). 
+```{r protein_in_test_dwnreg}
+head(protein_in_test_dwnreg)[,to_file]
+```
+
+## Upset plot
+
+We have came up with the following groups of genes/proteins from the tests between HD vs control
+- Upregulated in HD (proteomics of fibroblasts) --> Protein.Upreg.FB
+- Upregulated in HD (proteomics of iNs) --> Protein.Upreg.iN
+- Upregulated in HD (RNAseq of fibroblasts) --> RNA.Upreg.FB
+- Upregulated in HD (RNAseq of iNs) --> RNA.Upreg.iN
+- Downregulated in HD (proteomics of fibroblasts) --> Protein.Downreg.FB
+- Downregulated in HD (proteomics of iNs) --> Protein.Downreg.iN
+- Downregulated in HD (RNAseq of fibroblasts) --> RNA.Downreg.FB
+- Downregulated in HD (RNAseq of iNs) --> RNA.Downreg.iN
+
+To visualize how many genes/proteins are being shared between the groups, here is an upset plot:
+```{r upset}
+to_file <- c("Gene", "Mean CTRL", "Mean HD", "Log2FC", "Shapiro Pvalue - CTRL",
+             "Shapiro Pvalue - HD", "T", "Pvalue", "Low conf int", "High conf int", "type")
+colnames(rna_norm_in_test2_upreg)[ncol(rna_norm_in_test2_upreg)] <- "Gene"
+colnames(rna_norm_in_test2_upreg)[1] <- "gene_id"
+
+colnames(rna_norm_in_test2_dwnreg)[ncol(rna_norm_in_test2_dwnreg)] <- "Gene"
+colnames(rna_norm_in_test2_dwnreg)[1] <- "gene_id"
+
+colnames(rna_norm_fb_test2_upreg)[ncol(rna_norm_fb_test2_upreg)] <- "Gene"
+colnames(rna_norm_fb_test2_upreg)[1] <- "gene_id"
+
+colnames(rna_norm_fb_test2_dwnreg)[ncol(rna_norm_fb_test2_dwnreg)] <- "Gene"
+colnames(rna_norm_fb_test2_dwnreg)[1] <- "gene_id"
+
+# UPSET
+input <- data.frame(gene_name=unique(c(rna_norm_in_test2_upreg$Gene,
+                                       rna_norm_fb_test2_upreg$Gene,
+                                       protein_in_test_upreg$`Gene id`,
+                                       protein_fb_test_upreg$gene_id,
+                                       rna_norm_in_test2_dwnreg$Gene,
+                                       rna_norm_fb_test2_dwnreg$Gene,
+                                       protein_in_test_dwnreg$`Gene id`,
+                                       protein_fb_test_dwnreg$gene_id)))
+
+input$RNA.Upreg.iN <- ifelse(input$gene_name %in% rna_norm_in_test2_upreg$Gene, 1, 0)
+input$RNA.Upreg.FB <- ifelse(input$gene_name %in% rna_norm_fb_test2_upreg$Gene, 1, 0)
+input$Protein.Upreg.iN <- ifelse(input$gene_name %in% protein_in_test_upreg$`Gene id`, 1, 0)
+input$Protein.Upreg.FB <- ifelse(input$gene_name %in% protein_fb_test_upreg$gene_id, 1, 0)
+input$RNA.Downreg.iN <- ifelse(input$gene_name %in% rna_norm_in_test2_dwnreg$Gene, 1, 0)
+input$RNA.Downreg.FB <- ifelse(input$gene_name %in% rna_norm_fb_test2_dwnreg$Gene, 1, 0)
+input$Protein.Downreg.iN <- ifelse(input$gene_name %in% protein_in_test_dwnreg$`Gene id`, 1, 0)
+input$Protein.Downreg.FB <- ifelse(input$gene_name %in% protein_fb_test_dwnreg$gene_id, 1, 0)
+
+library(UpSetR)
+upset_plot <- upset(input, sets = c("RNA.Downreg.iN", # #417096
+                                    "RNA.Downreg.FB", # #417096
+                                    "Protein.Downreg.iN", # #9dc3e3
+                                    "Protein.Downreg.FB", # #9dc3e3
+                                    "RNA.Upreg.iN", # #d15685
+                                    "RNA.Upreg.FB", # #d15685
+                                    "Protein.Upreg.iN", # #f2a7c4
+                                    "Protein.Upreg.FB"), # #f2a7c4
+                    mainbar.y.label = "Gene Intersections", sets.x.label = "Genes Per Group",
+                    keep.order=TRUE,
+                    sets.bar.color=c('#417096', '#417096', '#9dc3e3', '#9dc3e3', '#d15685', '#d15685', '#f2a7c4', '#f2a7c4'))
+
+pdf("/Volumes/My Passport/hd_in/02.08.20_hd/plots/Fig2d.pdf")
+upset_plot
+dev.off()
+
+svg("/Volumes/My Passport/hd_in/02.08.20_hd/plots/Fig2d.svg")
+upset_plot
+dev.off()
+
+upset_plot
+writexl::write_xlsx(x = input, 
+           path = paste(path, "tables/STable11.xlsx", sep=''))
+```
+
+As you can see from the plot, there is very little intersection among the groups of dysregulated genes.
+
+## GO results
+
+Here we just convert the results from the GO analysis (PANTHER version 16) to excel files. The GO analysis was performed with the up and downregulated genes in iN RNAseq HD vs Control.
+
+```{r GO}
+rna_norm_in_test2_upreg_GO <- fread(paste(path, "GO_analysis/STable7.txt", sep=""), fill=T, skip = 11, sep="\t")
+rna_norm_in_test2_upreg_GO <- rna_norm_in_test2_upreg_GO[order(rna_norm_in_test2_upreg_GO$`in_rna_hd.ctrl_upreg.tab (FDR)`),]
+writexl::write_xlsx(rna_norm_in_test2_upreg_GO, paste(path, "tables/STable7.xlsx", sep=""), col_names = T)
+rna_norm_in_test2_dwnreg_GO <- fread( paste(path, "GO_analysis/STable8.txt", sep=""), fill=T, skip = 11, sep="\t")
+rna_norm_in_test2_dwnreg_GO <- rna_norm_in_test2_dwnreg_GO[order(rna_norm_in_test2_dwnreg_GO$`in_rna_hd.ctrl_dwnreg.tab (FDR)`),]
+writexl::write_xlsx(rna_norm_in_test2_dwnreg_GO, paste(path,"tables/STable8.xlsx", sep=""), col_names = T)
+```
+
+## Revision
+
+Gene set enrichment analysis (iNs RNAseq) shows a positive enrichment to ZNF23 and ZNF16 target genes.
+
+```{r gsea_znfs}
+library(clusterProfiler)
+library(enrichplot)
+library(msigdbr)
+set.seed(10)
+# GSEA ----
+m_tfs <- msigdbr(species = "Homo sapiens", category = "C3") %>% 
+  dplyr::select(gs_name, human_gene_symbol)#, human_gene_symbol)
+## feature 1: numeric vector
+geneList <- rna_norm_in_test2$Log2FC
+## feature 2: named vector
+names(geneList) <- as.character(rna_norm_in_test2$gene_name)
+## feature 3: decreasing order
+geneList <- sort(geneList, decreasing = TRUE)
+em2 <- GSEA(geneList, TERM2GENE = m_tfs, seed = T)
+gseaplot2(em2, geneSetID = c("ZNF23_TARGET_GENES", "ZNF16_TARGET_GENES"), 
+          title = "Enrichment of ZNF23 and ZNF16 target genes")
+```
+
+Number of positively enriched gene sets
+```{r positively_enriched}
+# Positively enriched
+nrow(em2@result[which(em2@result$enrichmentScore > 0),])
+```
+
+Number of negatively enriched gene sets
+```{r negatively_enriched}
+# Negatively enriched
+nrow(em2@result[which(em2@result$enrichmentScore < 0),])
+```
+
+There are the negatively enriched gene sets which are not miRNAs (as we obviously won't see those in the proteomics..)
+```{r negatively_enriched_not_miRNAs}
+# Negatively enriched not miRNAs
+em2@result[which(em2@result$enrichmentScore < 0 & !grepl("MIR", em2@result$ID)),]
+```
+
+Among those, just TAF9 and HMGB2 were captured by the proteomics, so here are the boxplots of those two proteins in the iN's proetomics
+```{r taf9_hmgb2}
+negatively_enriched <- sapply(str_split(em2@result[which(em2@result$enrichmentScore < 0 & !grepl("MIR", em2@result$ID)), "ID"], "_"), `[[`, 1)
+negatively_enriched_counts <- protein_in[which(protein_in$gene_id %in% c("TAF9", "HMGB2")),]
+rownames(negatively_enriched_counts) <- negatively_enriched_counts$gene_id
+negatively_enriched_counts <- negatively_enriched_counts[,c(-ncol(negatively_enriched_counts))]
+negatively_enriched_counts_melt <- reshape2::melt(negatively_enriched_counts, by='gene_id')
+negatively_enriched_counts_melt <- merge(negatively_enriched_counts_melt, coldata_in, by.x = "variable", by.y='Sample')
+ggplot(negatively_enriched_counts_melt, aes(x=Stage, y=value, fill=Stage)) + geom_boxplot()  + facet_wrap(.~gene_id, scales = "free")+ theme_classic() +
+  labs(x="Condition", fill = "Condition", y="Protein levels") + ggtitle("Protein (iN) abundance of the negatively enriched gene sets in RNAseq (iN)")
+```
+
+Here we checked if we could see a trend in the log2FCs (iNs proteomics results - HD vs control) of the target genes, of the gene sets that we saw enriched in the iN HD vs control RNAseq results (positively or negatively).
+```{r gene_sets_targets_in_protein_iNs}
+genes_genesets_upreg <- unlist(str_split(paste(em2@result[which(em2@result$enrichmentScore > 0),"core_enrichment"], collapse = "/"), "/"))
+positively_enriched_targets_counts <- protein_in_test2[which(protein_in_test2$gene_id %in% genes_genesets_upreg),]
+genes_genesets_dwnreg <- unlist(str_split(paste(em2@result[which(em2@result$enrichmentScore < 0),"core_enrichment"], collapse = "/"), "/"))
+negatively_enriched_targets_test <- protein_in_test2[which(protein_in_test2$gene_id %in% genes_genesets_dwnreg),]
+# How many of these targets were captured in our proteomics?
+table(genes_genesets_upreg %in% protein$gene_id)
+table(genes_genesets_dwnreg %in% protein$gene_id)
+library(ggpubr)
+ggarrange(
+ggplot(positively_enriched_targets_counts, aes(x=1, y=Log2FC)) + 
+  geom_boxplot() + geom_hline(yintercept = 0, linetype = "dashed", colour="red") +
+  theme_classic() + theme(axis.title.x=element_blank(),
+                          axis.text.x=element_blank(),
+                          axis.ticks.x=element_blank()) + ggtitle("Log2FC of protein targets of enriched TF among\nupregulated genes in RNAseq"),
+ggplot(negatively_enriched_targets_test, aes(x=1, y=Log2FC)) + 
+  geom_boxplot() + geom_hline(yintercept = 0, linetype = "dashed", colour="red") +
+  theme_classic() + theme(axis.title.x=element_blank(),
+                          axis.text.x=element_blank(),
+                          axis.ticks.x=element_blank()) + ggtitle("Log2FC of protein targets of enriched TF among\ndownregulated genes in RNAseq"))
+
+```
+
+To rule out hetereogeneity of the RNAseq samples causing lower statistical power and consequently not finding these genes/proteins among the dysregulated genes in the RNAseq data, we checked the RNA expression of the top 10 up and downregulated proteins in iNs.
+```{r heterogeneity_rnaseq}
+# Heterogeneity of samples? ----
+# this changed bc of log2FC calculation... my bad
+top10_upreg_protein_in <- head(protein_in_test_upreg[order(protein_in_test_upreg$Log2FC, decreasing = T),], 10)$Gene
+top10_dwnreg_protein_in <- head(protein_in_test_dwnreg[order(protein_in_test_dwnreg$Log2FC, decreasing = T),], 10)$Gene
+coldata <- fread('/Volumes/My Passport/hd_in/09.19_hd/CategoricalAnnotation.txt', data.table = F)
+rownames(coldata) <- coldata$Column
+coldata$Sample <- as.character(coldata$Sample)
+coldata$Column <- as.character(coldata$Column)
+rna <- fread('/Volumes/My Passport/hd_in/02.08.20_hd/3_stdmapping/1_readcounts/gene_count_matrix_0_p.csv', data.table=F)
+rownames(rna) <- rna$Geneid
+colnames(rna)[7:ncol(rna)] <- sapply(str_split(colnames(rna)[7:ncol(rna)], "/"), `[[`, 5)
+rna_expressed <- rna[which(apply(rna[,coldata$Column], 1, more_10) > 0), coldata$Column]
+dds_rna <- DESeqDataSetFromMatrix(rna_expressed[,coldata$Column], coldata, design= ~Stage)
+dds_rna$Stage <- relevel(dds_rna$Stage, 'CTRL')
+dds_rna <- DESeq(dds_rna)
+rna_expressed_norm <- as.data.frame(counts(dds_rna, normalize=T))
+rna_expressed_norm <- merge(rna_expressed_norm, unique(gene_transcript[,c("gene_id", "gene_name")]),  by.x="row.names", by.y="gene_id")
+top10_upreg_protein_in_df <- rna_expressed_norm[which(rna_expressed_norm$gene_name %in% top10_upreg_protein_in), ]
+top10_dwnreg_protein_in_df <- rna_expressed_norm[which(rna_expressed_norm$gene_name %in% top10_dwnreg_protein_in), ]
+top10_upreg_protein_in_df <- reshape2::melt(top10_upreg_protein_in_df[,-1], by="gene_name")
+top10_dwnreg_protein_in_df <- reshape2::melt(top10_dwnreg_protein_in_df[,-1], by="gene_name")
+top10_upreg_protein_in_df <- merge(top10_upreg_protein_in_df, coldata_in, by.x='variable', by.y="Column")
+top10_dwnreg_protein_in_df <- merge(top10_dwnreg_protein_in_df, coldata_in, by.x='variable', by.y="Column")
+ggplot(top10_upreg_protein_in_df, aes(x=Stage, y=value, fill=Stage)) + geom_boxplot() + 
+  facet_wrap(.~gene_name, scales = "free_y") + theme_classic() + 
+  ggtitle("Top 10 upregulated proteins in RNAseq (iNs)") + 
+  labs(y="Normalized expression (median of ratios)", fill="Condition", x="Condition")
+ggplot(top10_dwnreg_protein_in_df, aes(x=Stage, y=value, fill=Stage)) + geom_boxplot() + 
+  facet_wrap(.~gene_name, scales = "free_y") + theme_classic() + 
+  ggtitle("Top 10 downregulated proteins in RNAseq (iNs)") + 
+  labs(y="Normalized expression (median of ratios)", fill="Condition", x="Condition")
+```
+
+To answer the question to if iNs resembled more to cortical or striatal neurons we plot, both in RNA expression and protein abundance, markers of those two regions (taken from Linnarsson Mouse Atlas). 
+
+```{r cortical_or_striatal}
+# Cortical vs striatal ----
+striatal <- toupper(unique(c("Drd1", "Ido1", "Ppp1r1b", "Adora2a", "Ido1", "Adora2a", "Gpr83", "Penk", "Drd1", "Dclk3", "Mhrt", "Drd1", "Lrpprc", "Tac1", "Wnt2", "A230065H16Rik", "Zic1", "2810459M11Rik", "Gm14964")))
+striatal <- striatal[which(striatal %in% rna_expressed_norm$gene_name)]
+
+cortical <- toupper(unique(c("Myl4", "Cpne4", "Rprm", "Rell1", "Cplx3", "Nxph3", "Hs3st4", "Sulf1", "Prss12", "Igfbp6", "C130074G19Rik", "Nr4a2", "Col24a1", "Oprk1", "Hs3st2", "Vipr1", "Pde1a", "Dkkl1", "Galntl6", "Krt12", "Tcap", "A830009L08Rik", "Gm12371", "Lamp5", "Tshz2", "Ddit4l", "Wfs1", "RP24-134N2.1", "Vwc2l", "Cbln1", "Ntsr1", "Rxfp1", "Fermt1", "RP23-231J2.1", "Dbpht2", "Cdkl4", "Scube1", "Tekt5", "Trim54", "Slc30a3", "Lmo3", "Abi3bp", "4930426D05Rik", "Ndst4", "Klhl14", "Rgs14", "Oxtr", "Bmp3", "Fezf2", "RP24-134N2.1", "Kcng1", "Pthlh", "Cox6a2", "Rbp4", "Cox6a2", "Cort", "Sst", "Ccna1", "Crhbp", "Tacr1", "Chodl", "Lhx6", "Pde11a", "Npy", "Ptchd2", "Cplx3", "Teddm3", "Krt73", "Stk32b", "5330429C05Rik", "Yjefn3", "Hdhd3", "Npas1", "Col19a1", "Slc17a8", "Vip", "Gm17750", "Cxcl14", "Vip", "Tiam1", "Tac2", "Epha7")))
+cortical <- cortical[which(cortical %in% rna_expressed_norm$gene_name)]
+
+markers <- data.frame(markers = c(cortical,striatal),
+           type = c(rep("cortical", length(cortical)), rep("striatal", length(striatal))))
+rownames(markers) <- markers$markers
+
+rownames(rna_expressed_norm) <- make.unique(rna_expressed_norm$gene_name)
+markers_rna_norm <- rna_expressed_norm[which(rna_expressed_norm$gene_name %in% markers$markers),coldata_in$Column]
+markers_rna_norm <- markers_rna_norm[markers$markers,]
+pheatmap(log2(markers_rna_norm+0.5), 
+         cluster_rows = F, 
+         cluster_cols = F,
+         annotation_row = markers[,"type", drop=F],
+         annotation_col = coldata_in[,"Stage", drop=F],
+         gaps_col = 7, fontsize = 8, show_colnames = F, main = "Cortical and striatal markers in iNs RNAseq")
+
+rownames(protein) <- protein$gene_unique
+markers_protein_norm <- protein[which(protein$gene_id %in% markers$markers),c("gene_id", coldata_in$Sample)]
+rownames(markers_protein_norm) <- markers_protein_norm$gene_id
+markers_protein_norm <- markers_protein_norm[markers$markers[which(markers$markers %in% markers_protein_norm$gene_id)],]
+markers_protein_norm[markers_protein_norm == 0] <- NA
+pheatmap(log2(markers_protein_norm[,-1]+0.5), 
+         cluster_rows = F, 
+         cluster_cols = F,
+         annotation_row = markers[,"type", drop=F],
+         # annotation_col = coldata_in[,"Stage", drop=F],
+         gaps_col = 7, fontsize = 8, show_colnames = F, main = "Cortical and striatal markers in iNs Proteomics")
+```
